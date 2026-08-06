@@ -1,0 +1,24 @@
+[
+  {
+    "itemCode": "AT88G01001",
+    "description": "AIRCONIC SPINNER 55/20 TSA SPORTY BLUE",
+    "price": 13250,
+    "stock": 21,
+    "image": "/items/item1front.jpg",
+    "hoverImage": "/items/item2interior.jpg"
+  },
+  {
+    "itemCode": "PROD-NOTEBOOK-01",
+    "description": "Leather Notebook - Premium leather-bound notebook with 200 blank pages.",
+    "price": 32.0,
+    "stock": 25,
+    "image": ""
+  },
+  {
+    "itemCode": "PROD-ORGANIZER-01",
+    "description": "Bamboo Desk Organizer - Keep your workspace tidy with this eco-friendly bamboo organizer.",
+    "price": 24.99,
+    "stock": 25,
+    "image": ""
+  }
+]

@@ -1,22 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAdminsCollection } from '@/lib/models/admin';
-import { generateOpaqueToken } from '@/lib/adminAuth';
-import { sendAdminPasswordResetEmail } from '@/lib/email';
+import { NextRequest, NextResponse } from "next/server";
+import { getAdminsCollection } from "@/lib/models/admin";
+import { generateOpaqueToken } from "@/lib/adminAuth";
+import { sendAdminPasswordResetEmail } from "@/lib/email";
+import { asEmail } from "@/lib/validation";
+import {
+  RATE_LIMITS,
+  checkRateLimits,
+  getClientIp,
+  hashIdentifier,
+  rateLimitResponse,
+} from "@/lib/rateLimit";
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export async function POST(req: NextRequest) {
   try {
-    const { email } = await req.json();
+    const body: unknown = await req.json();
+    const email = asEmail(
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>).email
+        : undefined,
+    );
+
     const genericResponse = NextResponse.json({
       success: true,
-      message: 'If that email is registered, a reset link has been sent.',
+      message: "If that email is registered, a reset link has been sent.",
     });
 
-    if (!email || typeof email !== 'string') return genericResponse;
+    if (!email) return genericResponse;
+
+    // Unauthenticated and it sends mail, so it is rate limited on both
+    // axes: per IP to blunt broad abuse, per address because repeatedly
+    // mail-bombing one known admin (and rotating their outstanding reset
+    // token each time) is the attack that actually lands.
+    const limit = await checkRateLimits([
+      {
+        key: `admin-forgot:ip:${getClientIp(req)}`,
+        rule: RATE_LIMITS.adminForgotPerIp,
+      },
+      {
+        key: `admin-forgot:email:${hashIdentifier(email)}`,
+        rule: RATE_LIMITS.adminForgotPerEmail,
+      },
+    ]);
+    if (!limit.ok) {
+      return rateLimitResponse(
+        limit,
+        "Too many reset requests. Please wait before trying again.",
+      );
+    }
 
     const admins = await getAdminsCollection();
-    const admin = await admins.findOne({ email: email.toLowerCase(), status: 'active' });
+    const admin = await admins.findOne({
+      email,
+      status: "active",
+    });
 
     // Deliberately return the same response whether or not the account
     // exists — a different message here would let someone enumerate admins.
@@ -31,16 +69,19 @@ export async function POST(req: NextRequest) {
           inviteTokenExpires: new Date(Date.now() + RESET_TOKEN_TTL_MS),
           updatedAt: new Date(),
         },
-      }
+      },
     );
 
-    const appUrl = process.env.APP_URL || 'http://localhost:3000';
+    const appUrl = process.env.APP_URL || "http://localhost:3000";
     const resetUrl = `${appUrl}/admin/reset-password?id=${admin._id.toString()}&token=${token}`;
     await sendAdminPasswordResetEmail(admin.email, resetUrl);
 
     return genericResponse;
   } catch (error) {
-    console.error('Error requesting admin password reset:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error("Error requesting admin password reset:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }

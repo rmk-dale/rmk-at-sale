@@ -8,12 +8,16 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "node --experimental-strip-types scripts/seed-products.ts",
-    "seed:admin": "node --experimental-strip-types scripts/seed-admin.ts"
+    "seed:admin": "node --experimental-strip-types scripts/seed-admin.ts",
+    "check:admin": "node --experimental-strip-types scripts/check-admin.ts",
+    "check:ratelimit": "node --experimental-strip-types scripts/check-ratelimit.ts",
+    "check:security": "node --experimental-strip-types scripts/security-checks.ts",
+    "migrate:orders": "node --experimental-strip-types scripts/migrate-orders.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "lucide-react": "^1.28.0",
-    "mongodb": "^6.10.0",
+    "mongodb": "^6.21.0",
     "next": "16.3.0",
     "nodemailer": "^9.0.4",
     "otpauth": "^9.3.4",

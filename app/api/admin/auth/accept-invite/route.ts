@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { ObjectId } from 'mongodb';
-import { getAdminsCollection } from '@/lib/models/admin';
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { ObjectId } from "mongodb";
+import { getAdminsCollection } from "@/lib/models/admin";
 import {
   ADMIN_CHALLENGE_COOKIE,
   CHALLENGE_TTL_MS,
@@ -11,7 +11,13 @@ import {
   hashPassword,
   signChallenge,
   verifyOpaqueToken,
-} from '@/lib/adminAuth';
+} from "@/lib/adminAuth";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rateLimit";
 
 const MIN_PASSWORD_LENGTH = 10;
 
@@ -19,14 +25,43 @@ export async function POST(req: NextRequest) {
   try {
     const { id, token, password } = await req.json();
 
-    if (!id || !token || !password) {
-      return NextResponse.json({ error: 'Missing invite details.' }, { status: 400 });
+    const rl = await checkRateLimit(
+      `admin-token:ip:${getClientIp(req)}`,
+      RATE_LIMITS.adminTokenEndpointPerIp,
+    );
+    if (!rl.ok) {
+      return rateLimitResponse(
+        rl,
+        "Too many attempts. Please wait before trying again.",
+      );
     }
 
-    if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+    if (!id || !token || !password) {
       return NextResponse.json(
-        { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` },
-        { status: 400 }
+        { error: "Missing invite details." },
+        { status: 400 },
+      );
+    }
+
+    if (typeof password !== "string" || password.length < MIN_PASSWORD_LENGTH) {
+      return NextResponse.json(
+        {
+          error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        },
+        { status: 400 },
+      );
+    }
+
+    if (typeof id !== "string" || !ObjectId.isValid(id)) {
+      return NextResponse.json(
+        { error: "This invite link is invalid or has expired." },
+        { status: 400 },
+      );
+    }
+    if (typeof token !== "string") {
+      return NextResponse.json(
+        { error: "This invite link is invalid or has expired." },
+        { status: 400 },
       );
     }
 
@@ -35,12 +70,15 @@ export async function POST(req: NextRequest) {
 
     if (
       !admin ||
-      admin.status !== 'invited' ||
+      admin.status !== "invited" ||
       !admin.inviteTokenExpires ||
       admin.inviteTokenExpires.getTime() < Date.now() ||
       !verifyOpaqueToken(token, admin.inviteTokenHash)
     ) {
-      return NextResponse.json({ error: 'This invite link is invalid or has expired.' }, { status: 400 });
+      return NextResponse.json(
+        { error: "This invite link is invalid or has expired." },
+        { status: 400 },
+      );
     }
 
     const passwordHash = await hashPassword(password);
@@ -50,8 +88,8 @@ export async function POST(req: NextRequest) {
       { _id: admin._id },
       {
         $set: { passwordHash, twoFactorSecret, updatedAt: new Date() },
-        $unset: { inviteTokenHash: '', inviteTokenExpires: '' },
-      }
+        $unset: { inviteTokenHash: "", inviteTokenExpires: "" },
+      },
     );
 
     // Password is set, but the account stays 'invited' — and therefore unable
@@ -60,17 +98,24 @@ export async function POST(req: NextRequest) {
     const qrCodeDataUrl = await getQrCodeDataUrl(otpAuthUrl);
 
     const cookieStore = await cookies();
-    cookieStore.set(ADMIN_CHALLENGE_COOKIE, signChallenge(admin._id.toString()), {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: CHALLENGE_TTL_MS / 1000,
-      path: '/',
-    });
+    cookieStore.set(
+      ADMIN_CHALLENGE_COOKIE,
+      signChallenge(admin._id.toString()),
+      {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: CHALLENGE_TTL_MS / 1000,
+        path: "/",
+      },
+    );
 
     return NextResponse.json({ success: true, otpAuthUrl, qrCodeDataUrl });
   } catch (error) {
-    console.error('Error accepting admin invite:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error("Error accepting admin invite:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }

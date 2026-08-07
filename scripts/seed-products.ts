@@ -14,16 +14,25 @@
  * (reads MONGODB_URI from .env.local; doesn't touch any other env tooling)
  */
 
-import { MongoClient } from 'mongodb';
-import { readFile } from 'fs/promises';
-import { existsSync, readFileSync } from 'fs';
-import path from 'path';
+import { MongoClient } from "mongodb";
+import dns from "dns";
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+} catch (e) {}
+import { readFile } from "fs/promises";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 
-const ROOT = path.join(__dirname, '..');
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT = path.join(__dirname, "..");
 const DEFAULT_STOCK = Number(process.env.SEED_DEFAULT_STOCK ?? 25);
 
 interface SeedRow {
   itemCode: string;
+  name: string;
   description: string;
   price: number;
   stock: number;
@@ -32,16 +41,19 @@ interface SeedRow {
 }
 
 function loadEnvLocal() {
-  const envPath = path.join(ROOT, '.env.local');
+  const envPath = path.join(ROOT, ".env.local");
   if (!existsSync(envPath)) return;
-  const contents = readFileSync(envPath, 'utf8');
-  for (const line of contents.split('\n')) {
+  const contents = readFileSync(envPath, "utf8");
+  for (const line of contents.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    const value = trimmed
+      .slice(eq + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (!(key in process.env)) process.env[key] = value;
   }
 }
@@ -54,7 +66,7 @@ function parseCsv(text: string): Record<string, string>[] {
     const cells = splitCsvLine(line);
     const row: Record<string, string> = {};
     headers.forEach((header, i) => {
-      row[header] = (cells[i] ?? '').trim();
+      row[header] = (cells[i] ?? "").trim();
     });
     return row;
   });
@@ -62,15 +74,15 @@ function parseCsv(text: string): Record<string, string>[] {
 
 function splitCsvLine(line: string): string[] {
   const cells: string[] = [];
-  let current = '';
+  let current = "";
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '"') {
       inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === "," && !inQuotes) {
       cells.push(current);
-      current = '';
+      current = "";
     } else {
       current += char;
     }
@@ -80,45 +92,53 @@ function splitCsvLine(line: string): string[] {
 }
 
 function parsePrice(raw: string | number): number {
-  if (typeof raw === 'number') return raw;
-  return Number(raw.replace(/[^0-9.-]/g, ''));
+  if (typeof raw === "number") return raw;
+  return Number(raw.replace(/[^0-9.-]/g, ""));
 }
 
 async function loadRows(): Promise<SeedRow[]> {
-  const csvPath = path.join(ROOT, 'data', 'products.csv');
-  const jsonPath = path.join(ROOT, 'data', 'products.json');
+  const csvPath = path.join(ROOT, "data", "products.csv");
+  const jsonPath = path.join(ROOT, "data", "products.json");
 
   if (existsSync(csvPath)) {
     console.log(`Reading ${csvPath}`);
-    const text = await readFile(csvPath, 'utf8');
+    const text = await readFile(csvPath, "utf8");
     const rows = parseCsv(text);
     return rows
-      .filter((row) => row['Item Code'])
+      .filter((row) => row["Item Code"])
       .map((row) => ({
-        itemCode: row['Item Code'],
-        description: row['Description'] ?? '',
-        price: parsePrice(row['Regular Price'] ?? '0'),
-        stock: row['Inventory'] ? Math.round(parsePrice(row['Inventory'])) : DEFAULT_STOCK,
-        image: row['Image'] ? `/items/${row['Image']}` : '',
-        hoverImage: row['Hover Image'] ? `/items/${row['Hover Image']}` : undefined,
+        itemCode: row["Item Code"],
+        name: row["Name"] ?? row["Description"] ?? "",
+        description: row["Description"] ?? "",
+        price: parsePrice(row["Regular Price"] ?? "0"),
+        stock: row["Inventory"]
+          ? Math.round(parsePrice(row["Inventory"]))
+          : DEFAULT_STOCK,
+        image: row["Image"] ? `/items/${row["Image"]}` : "",
+        hoverImage: row["Hover Image"]
+          ? `/items/${row["Hover Image"]}`
+          : undefined,
       }));
   }
 
   if (existsSync(jsonPath)) {
     console.log(`Reading ${jsonPath}`);
-    const text = await readFile(jsonPath, 'utf8');
+    const text = await readFile(jsonPath, "utf8");
     const items = JSON.parse(text) as Array<Record<string, unknown>>;
     return items.map((item) => ({
-      itemCode: String(item.itemCode ?? item.id ?? ''),
-      description: String(item.description ?? item.name ?? ''),
+      itemCode: String(item.itemCode ?? item.id ?? ""),
+      name: String(item.name ?? item.description ?? ""),
+      description: String(item.description ?? item.name ?? ""),
       price: parsePrice(item.price as string | number),
-      stock: typeof item.stock === 'number' ? item.stock : DEFAULT_STOCK,
-      image: String(item.image ?? ''),
+      stock: typeof item.stock === "number" ? item.stock : DEFAULT_STOCK,
+      image: String(item.image ?? ""),
       hoverImage: item.hoverImage ? String(item.hoverImage) : undefined,
     }));
   }
 
-  throw new Error('No data/products.csv or data/products.json found to seed from.');
+  throw new Error(
+    "No data/products.csv or data/products.json found to seed from.",
+  );
 }
 
 async function main() {
@@ -126,13 +146,17 @@ async function main() {
 
   const uri = process.env.MONGODB_URI;
   if (!uri) {
-    throw new Error('MONGODB_URI is not set. Add it to .env.local before running the seed script.');
+    throw new Error(
+      "MONGODB_URI is not set. Add it to .env.local before running the seed script.",
+    );
   }
 
   const rows = await loadRows();
   const invalid = rows.filter((r) => !r.itemCode || !r.description);
   if (invalid.length > 0) {
-    console.warn(`Skipping ${invalid.length} row(s) missing an Item Code or Description.`);
+    console.warn(
+      `Skipping ${invalid.length} row(s) missing an Item Code or Description.`,
+    );
   }
   const valid = rows.filter((r) => r.itemCode && r.description);
 
@@ -140,7 +164,7 @@ async function main() {
   await client.connect();
 
   try {
-    const products = client.db().collection('products');
+    const products = client.db().collection("products");
     const now = new Date();
 
     const operations = valid.map((row) => ({
@@ -148,6 +172,7 @@ async function main() {
         filter: { _id: row.itemCode },
         update: {
           $set: {
+            name: row.name,
             description: row.description,
             price: row.price,
             stock: row.stock,
@@ -162,13 +187,13 @@ async function main() {
     }));
 
     if (operations.length === 0) {
-      console.log('Nothing to seed.');
+      console.log("Nothing to seed.");
       return;
     }
 
     const result = await products.bulkWrite(operations as never);
     console.log(
-      `Seeded ${valid.length} product(s) — ${result.upsertedCount} inserted, ${result.modifiedCount} updated.`
+      `Seeded ${valid.length} product(s) — ${result.upsertedCount} inserted, ${result.modifiedCount} updated.`,
     );
   } finally {
     await client.close();
@@ -176,6 +201,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Seed failed:', err);
+  console.error("Seed failed:", err);
   process.exit(1);
 });

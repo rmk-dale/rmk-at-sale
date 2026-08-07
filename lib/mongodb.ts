@@ -1,31 +1,58 @@
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, Db } from "mongodb";
+import dns from "dns";
+
+// Fix for querySrv ECONNREFUSED issues on certain Windows environments
+try {
+  dns.setServers(["8.8.8.8", "1.1.1.1"]);
+} catch (e) {
+  // Ignore in environments where this isn't allowed
+}
 
 const uri = process.env.MONGODB_URI;
 
 if (!uri) {
-  throw new Error('MONGODB_URI is not defined in environment variables.');
+  throw new Error("MONGODB_URI is not defined in environment variables.");
 }
+
+// We deploy to Vercel, where every concurrent request can be served by a
+// separate serverless function container — each with its own MongoClient
+// and its own pool. maxPoolSize is therefore a per-container budget, not a
+// global one: keep it low so N concurrent containers can't multiply past
+// Atlas M0's 500-connection cap. maxIdleTimeMS releases connections quickly
+// so frozen/recycled containers don't leave stale connections counted
+// against that cap. serverSelectionTimeoutMS/socketTimeoutMS make slow
+// queries fail fast instead of hanging into (and past) the function's own
+// execution timeout while holding a pool slot.
+const clientOptions = {
+  maxPoolSize: 5,
+  minPoolSize: 0,
+  maxIdleTimeMS: 10_000,
+  serverSelectionTimeoutMS: 5_000,
+  socketTimeoutMS: 20_000,
+};
 
 // In development, Next.js hot-reloads modules on every save, which would
 // otherwise open a brand new MongoClient (and a brand new connection pool)
 // each time this file is re-evaluated. Caching the client promise on
 // `globalThis` survives module reloads and keeps a single pool for the
-// life of the dev server. In production there's only ever one module
-// evaluation, so this is just a plain singleton.
+// life of the dev server. In production (including each Vercel container),
+// the module is evaluated once per container and reused across that
+// container's warm invocations, so this is effectively a per-container
+// singleton either way.
 declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
 let clientPromise: Promise<MongoClient>;
 
-if (process.env.NODE_ENV === 'development') {
+if (process.env.NODE_ENV === "development") {
   if (!global._mongoClientPromise) {
-    const client = new MongoClient(uri);
+    const client = new MongoClient(uri, clientOptions);
     global._mongoClientPromise = client.connect();
   }
   clientPromise = global._mongoClientPromise;
 } else {
-  const client = new MongoClient(uri);
+  const client = new MongoClient(uri, clientOptions);
   clientPromise = client.connect();
 }
 

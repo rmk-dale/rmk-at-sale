@@ -1,47 +1,108 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useCartStore } from '@/lib/store';
-import { ShoppingBag, Plus, ChevronDown } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { useCartStore } from "@/lib/store";
+import { ChevronDown } from "lucide-react";
+import ProductCard, { type CardProduct } from "@/components/ProductCard";
 
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  stock: number;
-  image: string;
-  hoverImage?: string;
-}
+type Product = CardProduct;
 
-type SortOption = 'featured' | 'price-asc' | 'price-desc' | 'name-asc';
+type SortOption = "featured" | "price-asc" | "price-desc" | "name-asc";
+
+const SORT_OPTIONS: { label: string; value: SortOption }[] = [
+  { label: "Featured", value: "featured" },
+  { label: "Price: low to high", value: "price-asc" },
+  { label: "Price: high to low", value: "price-desc" },
+  { label: "Name: A to Z", value: "name-asc" },
+];
 
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState<SortOption>('featured');
-  const [maxPrice, setMaxPrice] = useState(100);
+  const [sort, setSort] = useState<SortOption>("featured");
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [maxPrice, setMaxPrice] = useState(100000);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const addItem = useCartStore((state) => state.addItem);
 
+  const toggle = (value: string, list: string[]) =>
+    list.includes(value)
+      ? list.filter((v) => v !== value)
+      : [...list, value];
+
+  const [availableBrands, setAvailableBrands] = useState<{id: string, name: string}[]>([]);
+
   useEffect(() => {
-    fetch('/api/products')
+    fetch("/api/brands")
       .then((res) => res.json())
+      .then((data) => setAvailableBrands(Array.isArray(data) ? data : []))
+      .catch((err) => console.error("Failed to fetch brands", err));
+  }, []);
+
+  const colors = useMemo(() => {
+    const map = new Map<string, string | undefined>();
+    for (const p of products) {
+      for (const c of p.colors || []) {
+        if (!map.has(c.name)) map.set(c.name, c.hex);
+      }
+    }
+    return Array.from(map.entries()).map(([name, hex]) => ({ name, hex }));
+  }, [products]);
+
+  useEffect(() => {
+    fetch("/api/products")
+      .then(async (res) => {
+        if (!res.ok) {
+          const text = await res.text();
+          console.error("Failed to fetch products:", text);
+          return [];
+        }
+        return res.json();
+      })
       .then((data) => {
-        setProducts(data);
+        setProducts(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Network or parsing error:", err);
+        setProducts([]);
         setLoading(false);
       });
   }, []);
 
   const visibleProducts = useMemo(() => {
-    const filtered = products.filter((p) => p.price <= maxPrice);
+    const filtered = products.filter((p) => {
+      if (p.price > maxPrice) return false;
+      if (selectedBrands.length && !selectedBrands.includes(p.brand || ""))
+        return false;
+      if (
+        selectedColors.length &&
+        !(p.colors || []).some((c) => selectedColors.includes(c.name))
+      )
+        return false;
+      return true;
+    });
     const sorted = [...filtered];
-    if (sort === 'price-asc') sorted.sort((a, b) => a.price - b.price);
-    if (sort === 'price-desc') sorted.sort((a, b) => b.price - a.price);
-    if (sort === 'name-asc') sorted.sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === "featured") {
+      sorted.sort((a, b) => {
+        if (a.featured && !b.featured) return -1;
+        if (!a.featured && b.featured) return 1;
+        return 0; // maintain original relative order or fallback to _id via API order
+      });
+    }
+    if (sort === "price-asc") sorted.sort((a, b) => a.price - b.price);
+    if (sort === "price-desc") sorted.sort((a, b) => b.price - a.price);
+    if (sort === "name-asc")
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
     return sorted;
-  }, [products, sort, maxPrice]);
+  }, [
+    products,
+    sort,
+    maxPrice,
+    selectedBrands,
+    selectedColors,
+  ]);
 
   if (loading) {
     return (
@@ -60,27 +121,60 @@ export default function Home() {
       <div className="border-b border-border">
         <div className="max-w-7xl mx-auto px-6 h-12 flex items-center justify-between text-sm">
           <span className="text-zinc-500">Home / Shop all</span>
-          <label className="flex items-center gap-1 text-zinc-700">
-            Sort by:
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortOption)}
-              className="bg-transparent font-medium text-zinc-900 focus:outline-none cursor-pointer appearance-none pr-4"
+          
+          <div className="relative">
+            <button
+              onClick={() => setIsSortOpen(!isSortOpen)}
+              className="flex items-center gap-1.5 text-zinc-700 hover:text-zinc-900 transition-colors"
             >
-              <option value="featured">Featured</option>
-              <option value="price-asc">Price: low to high</option>
-              <option value="price-desc">Price: high to low</option>
-              <option value="name-asc">Name: A to Z</option>
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 -ml-4 pointer-events-none text-zinc-500" />
-          </label>
+              Sort by:
+              <span className="font-medium text-zinc-900">
+                {SORT_OPTIONS.find((o) => o.value === sort)?.label}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                  isSortOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {isSortOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setIsSortOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-48 bg-surface border border-border rounded-xl shadow-xl shadow-black/5 overflow-hidden z-20 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {SORT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        setSort(opt.value);
+                        setIsSortOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between ${
+                        sort === opt.value
+                          ? "bg-zinc-50 font-medium text-zinc-900"
+                          : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+                      }`}
+                    >
+                      {opt.label}
+                      {sort === opt.value && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-zinc-900" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-10">
         <div className="mb-10 space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
-            American Tourister - Sale 
+            American Tourister - Sale
           </h1>
           <p className="text-zinc-500 max-w-2xl">
             Handcrafted goods designed to elevate your everyday workspace.
@@ -91,66 +185,11 @@ export default function Home() {
           {/* Product grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
             {visibleProducts.map((product) => (
-              <Link
+              <ProductCard
                 key={product.id}
-                href={`/product/${product.id}`}
-                className="group flex flex-col min-h-[420px] bg-surface rounded-2xl border border-border overflow-hidden card-hover"
-              >
-                <div className="aspect-[3/4] w-full relative bg-zinc-50 flex items-center justify-center overflow-hidden">
-                  {product.image ? (
-                    <>
-                      <Image
-                        src={product.image}
-                        alt={product.name}
-                        fill
-                        sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
-                        className={`object-cover transition-opacity duration-500 ${
-                          product.hoverImage ? 'group-hover:opacity-0' : 'group-hover:scale-105'
-                        }`}
-                      />
-                      {product.hoverImage && (
-                        <Image
-                          src={product.hoverImage}
-                          alt={`${product.name} detail`}
-                          fill
-                          sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
-                          className="object-cover opacity-0 transition-opacity duration-500 group-hover:opacity-100"
-                        />
-                      )}
-                    </>
-                  ) : (
-                    <ShoppingBag className="w-14 h-14 text-zinc-300 group-hover:scale-105 group-hover:text-zinc-400 transition-all duration-500" />
-                  )}
-                </div>
-
-                <div className="p-5 flex flex-col flex-grow">
-                  <div className="flex justify-between items-start gap-3 mb-2">
-                    <h2 className="text-base font-medium text-zinc-900 leading-tight">
-                      {product.name}
-                    </h2>
-                    <span className="text-zinc-900 font-semibold text-sm whitespace-nowrap">
-                      ${product.price.toFixed(2)}
-                    </span>
-                  </div>
-
-                  <p className="text-zinc-500 text-sm mb-6 flex-grow">
-                    {product.description}
-                  </p>
-
-                  <button
-                    disabled={product.stock <= 0}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      addItem({ ...product, quantity: 1 });
-                    }}
-                    className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-2.5 rounded-xl font-medium text-sm hover:bg-zinc-700 transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-zinc-900 disabled:active:scale-100"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {product.stock <= 0 ? 'Out of stock' : 'Add to cart'}
-                  </button>
-                </div>
-              </Link>
+                product={product}
+                onAddToCart={(p, color, size) => addItem({ ...p, quantity: 1, color, size })}
+              />
             ))}
 
             {visibleProducts.length === 0 && (
@@ -164,25 +203,63 @@ export default function Home() {
           <aside className="lg:border-l lg:border-border lg:pl-8 h-fit">
             <h3 className="font-medium text-zinc-900 mb-4">Filters</h3>
 
-            <div className="mb-6">
-              <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
-                Category
-              </p>
-              <div className="space-y-2 text-sm text-zinc-700">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" className="rounded border-border" />
-                  Mugs
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" className="rounded border-border" />
-                  Notebooks
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" className="rounded border-border" />
-                  Organizers
-                </label>
+            {availableBrands.length > 0 && (
+              <div className="mb-6">
+                <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
+                  Brand
+                </p>
+                <div className="space-y-2 text-sm text-zinc-700">
+                  {availableBrands.map((brandObj) => (
+                    <label key={brandObj.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="rounded border-border"
+                        checked={selectedBrands.includes(brandObj.name)}
+                        onChange={() =>
+                          setSelectedBrands((prev) => toggle(brandObj.name, prev))
+                        }
+                      />
+                      {brandObj.name}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+
+            {colors.length > 0 && (
+              <div className="mb-6">
+                <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
+                  Color
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {colors.map((color) => {
+                    const isSelected = selectedColors.includes(color.name);
+                    return (
+                      <button
+                        key={color.name}
+                        type="button"
+                        title={color.name}
+                        onClick={() =>
+                          setSelectedColors((prev) =>
+                            toggle(color.name, prev),
+                          )
+                        }
+                        className={`w-7 h-7 rounded-full border-2 transition-colors ${
+                          isSelected
+                            ? "border-zinc-900"
+                            : "border-transparent hover:border-zinc-300"
+                        }`}
+                      >
+                        <span
+                          className="block w-full h-full rounded-full border border-black/10"
+                          style={{ backgroundColor: color.hex || "#d4d4d8" }}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div>
               <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
@@ -191,14 +268,14 @@ export default function Home() {
               <input
                 type="range"
                 min={0}
-                max={100}
+                max={100000}
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(Number(e.target.value))}
                 className="w-full accent-zinc-900"
               />
               <div className="flex justify-between text-xs text-zinc-500 mt-1">
-                <span>$0</span>
-                <span>Up to ${maxPrice}</span>
+                <span>₱0</span>
+                <span>Up to ₱{maxPrice}</span>
               </div>
             </div>
           </aside>

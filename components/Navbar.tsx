@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import Image from 'next/image';
-import { ShoppingCart } from 'lucide-react';
-import { useCartStore } from '@/lib/store';
-import { useEffect, useState } from 'react';
+import Link from "next/link";
+import Image from "next/image";
+import { ShoppingCart } from "lucide-react";
+import { useCartStore } from "@/lib/store";
+import { useEffect, useState } from "react";
 
 export default function Navbar() {
   const getTotalItems = useCartStore((state) => state.getTotalItems());

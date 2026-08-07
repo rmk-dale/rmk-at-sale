@@ -16,6 +16,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "rmk-at-sale | Premium Monolithic E-Commerce",
   description: "A secure, stateless e-commerce experience.",
+  icons: {
+    icon: "/r.png",
+  },
 };
 
 export default function RootLayout({
@@ -24,7 +27,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+    >
       <body className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] flex flex-col">
         <StorefrontChrome>{children}</StorefrontChrome>
       </body>

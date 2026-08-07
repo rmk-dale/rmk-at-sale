@@ -1,42 +1,46 @@
-'use client';
+"use client";
 
-import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const id = searchParams.get('id') || '';
-  const token = searchParams.get('token') || '';
+  const id = searchParams.get("id") || "";
+  const token = searchParams.get("token") || "";
 
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   if (!id || !token) {
-    return <p className="text-zinc-500 text-sm">This reset link is missing its id or token.</p>;
+    return (
+      <p className="text-zinc-500 text-sm">
+        This reset link is missing its id or token.
+      </p>
+    );
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+      setError("Passwords do not match.");
       return;
     }
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/admin/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, token, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not reset password');
-      router.push('/admin/login');
+      if (!res.ok) throw new Error(data.error || "Could not reset password");
+      router.push("/admin/login");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -45,10 +49,14 @@ function ResetPasswordForm() {
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm bg-surface border border-border rounded-2xl p-8">
-        <h1 className="text-xl font-semibold text-zinc-900 mb-6">Choose a new password</h1>
+        <h1 className="text-xl font-semibold text-zinc-900 mb-6">
+          Choose a new password
+        </h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-zinc-600 mb-2">New password</label>
+            <label className="block text-sm font-medium text-zinc-600 mb-2">
+              New password
+            </label>
             <input
               required
               type="password"
@@ -59,7 +67,9 @@ function ResetPasswordForm() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-zinc-600 mb-2">Confirm password</label>
+            <label className="block text-sm font-medium text-zinc-600 mb-2">
+              Confirm password
+            </label>
             <input
               required
               type="password"
@@ -75,7 +85,7 @@ function ResetPasswordForm() {
             type="submit"
             className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
           >
-            {loading ? 'Saving…' : 'Reset password'}
+            {loading ? "Saving…" : "Reset password"}
           </button>
         </form>
       </div>

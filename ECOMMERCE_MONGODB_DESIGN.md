@@ -2,7 +2,7 @@
 
 ## Requirements
 
-This revises the earlier version of this plan on two points, both driven by new asks, plus a course-correction on one of them. First, this adds an admin side: a place to see current inventory, add new items, associate a product with a photo, and see the orders that have come through checkout — which also means orders need to become a real record in Mongo instead of just a one-off email, since today nothing is persisted anywhere once `sendReceiptEmail` fires. Second, photos: the previous revision moved them to Google Drive links to let admin manage photos without a deploy, but flagged that as carrying real reliability risk (unofficial hotlinking endpoints, silent breakage). This revision replaces that with what you actually described — photos stay exactly where they are today, checked into `public/items/` in the codebase, and the admin side gets a picker that lists those existing files as thumbnails so admin can *choose* which photo goes with which product, rather than typing a path or a Drive link by hand. That removes the Drive risk entirely.
+This revises the earlier version of this plan on two points, both driven by new asks, plus a course-correction on one of them. First, this adds an admin side: a place to see current inventory, add new items, associate a product with a photo, and see the orders that have come through checkout — which also means orders need to become a real record in Mongo instead of just a one-off email, since today nothing is persisted anywhere once `sendReceiptEmail` fires. Second, photos: the previous revision moved them to Google Drive links to let admin manage photos without a deploy, but flagged that as carrying real reliability risk (unofficial hotlinking endpoints, silent breakage). This revision replaces that with what you actually described — photos stay exactly where they are today, checked into `public/items/` in the codebase, and the admin side gets a picker that lists those existing files as thumbnails so admin can _choose_ which photo goes with which product, rather than typing a path or a Drive link by hand. That removes the Drive risk entirely.
 
 Everything from the previous version still holds: `name`/`description`, `price`, and `stock` live in MongoDB Atlas keyed by Item Code, and checkout still runs as a transaction that rejects the whole order if any line item is short on stock. What's new is layered on top of that, not a replacement of it.
 
@@ -39,11 +39,11 @@ Admin picks the file from a thumbnail grid instead of a path being typed or assu
 ```ts
 // products collection
 interface ProductDoc {
-  _id: string;              // "AT88G01001" — Item Code
-  description: string;      // "AIRCONIC SPINNER 55/20 TSA SPORTY BLUE"
+  _id: string; // "AT88G01001" — Item Code
+  description: string; // "AIRCONIC SPINNER 55/20 TSA SPORTY BLUE"
   price: number;
   stock: number;
-  image: string;             // path into public/items/, e.g. "/items/item1front.jpg"
+  image: string; // path into public/items/, e.g. "/items/item1front.jpg"
   hoverImage?: string;
   createdAt: Date;
   updatedAt: Date;
@@ -53,9 +53,14 @@ interface ProductDoc {
 interface OrderDoc {
   _id: ObjectId;
   buyerEmail: string;
-  items: { itemCode: string; description: string; quantity: number; price: number }[];
+  items: {
+    itemCode: string;
+    description: string;
+    quantity: number;
+    price: number;
+  }[];
   total: number;
-  status: 'received' | 'fulfilled' | 'cancelled';
+  status: "received" | "fulfilled" | "cancelled";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -63,14 +68,14 @@ interface OrderDoc {
 // admins collection — new, entirely separate from customers (customers never get a password)
 interface AdminDoc {
   _id: ObjectId;
-  username: string;            // unique, used to log in
-  email: string;                // unique, used for invites, resets, and notifications
-  passwordHash: string;         // bcrypt/argon2, never the raw password
-  role: 'owner' | 'staff';      // owner can manage other admins; staff cannot
-  status: 'invited' | 'active' | 'disabled';
-  twoFactorSecret?: string;     // TOTP secret, encrypted at rest; set once during enrollment
+  username: string; // unique, used to log in
+  email: string; // unique, used for invites, resets, and notifications
+  passwordHash: string; // bcrypt/argon2, never the raw password
+  role: "owner" | "staff"; // owner can manage other admins; staff cannot
+  status: "invited" | "active" | "disabled";
+  twoFactorSecret?: string; // TOTP secret, encrypted at rest; set once during enrollment
   twoFactorEnabled: boolean;
-  backupCodes?: string[];       // hashed one-time recovery codes, generated at 2FA enrollment
+  backupCodes?: string[]; // hashed one-time recovery codes, generated at 2FA enrollment
   failedLoginAttempts: number;
   lockedUntil?: Date;
   invitedBy?: ObjectId;
@@ -87,7 +92,7 @@ The Mongo document goes back to holding a plain path string, exactly like the ve
 
 What's new is only how that path string gets set. `GET /api/admin/photos` reads the `public/items/` directory on the server (`fs.readdirSync`) and returns the list of filenames currently sitting there. The admin "add item" / "edit item" form renders each of those as a thumbnail grid (`next/image` pointed at `/items/<filename>`, the same as the storefront already does), and clicking one sets that product's `image` (or `hoverImage`) field to the corresponding path — no typing a filename, no knowing the naming convention, no risk of a typo silently producing a broken image.
 
-One constraint carries over from the very first version of this plan and is worth restating plainly now that admin is in the picture: this picker lets admin *choose among photos that are already deployed*, it does not let admin *add a brand-new photo file* to the running app. Getting a new image's bytes into `public/items/` still means committing that file to the repo and deploying, same as it does today — the picker changes the "which existing photo goes with which product" step, not the "how do new photo bytes enter the system" step. If you want admin to be able to upload a genuinely new photo (not just reassign existing ones) without a developer involved, that's a separate, larger piece of work: an upload endpoint needs somewhere durable to write to, and if this ever deploys to a serverless platform (Vercel and similar), the filesystem at runtime is read-only outside of a temp directory — a file an API route writes to `public/items/` at runtime would not persist past that request and would vanish entirely on the next deploy, since the deployed filesystem is rebuilt from the repo every time. Supporting real uploads would mean writing to actual object storage (S3, Vercel Blob, Cloudinary) instead, which is exactly the "photos leave the codebase" trade this revision just moved away from — worth flagging now so it's a deliberate choice later rather than a surprise if "let's also let admin upload a new photo" comes up next.
+One constraint carries over from the very first version of this plan and is worth restating plainly now that admin is in the picture: this picker lets admin _choose among photos that are already deployed_, it does not let admin _add a brand-new photo file_ to the running app. Getting a new image's bytes into `public/items/` still means committing that file to the repo and deploying, same as it does today — the picker changes the "which existing photo goes with which product" step, not the "how do new photo bytes enter the system" step. If you want admin to be able to upload a genuinely new photo (not just reassign existing ones) without a developer involved, that's a separate, larger piece of work: an upload endpoint needs somewhere durable to write to, and if this ever deploys to a serverless platform (Vercel and similar), the filesystem at runtime is read-only outside of a temp directory — a file an API route writes to `public/items/` at runtime would not persist past that request and would vanish entirely on the next deploy, since the deployed filesystem is rebuilt from the repo every time. Supporting real uploads would mean writing to actual object storage (S3, Vercel Blob, Cloudinary) instead, which is exactly the "photos leave the codebase" trade this revision just moved away from — worth flagging now so it's a deliberate choice later rather than a surprise if "let's also let admin upload a new photo" comes up next.
 
 ## Deep dive: admin authentication
 

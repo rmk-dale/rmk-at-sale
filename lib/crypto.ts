@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from "crypto";
 
 /**
  * Generates an HMAC-SHA256 hash for a given string using the server's secret.
@@ -8,13 +8,10 @@ import crypto from 'crypto';
 export function generateHash(payload: string): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    throw new Error('JWT_SECRET is not defined in environment variables.');
+    throw new Error("JWT_SECRET is not defined in environment variables.");
   }
 
-  return crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex');
+  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
 }
 
 /**
@@ -25,11 +22,11 @@ export function generateHash(payload: string): string {
  */
 export function verifyHash(payload: string, hash: string): boolean {
   const expectedHash = generateHash(payload);
-  
+
   // Use timingSafeEqual to prevent timing attacks.
   // Both strings must be the same length, so we ensure they are buffers of equal size.
-  const expectedBuffer = Buffer.from(expectedHash, 'hex');
-  const actualBuffer = Buffer.from(hash, 'hex');
+  const expectedBuffer = Buffer.from(expectedHash, "hex");
+  const actualBuffer = Buffer.from(hash, "hex");
 
   if (expectedBuffer.length !== actualBuffer.length) {
     return false;

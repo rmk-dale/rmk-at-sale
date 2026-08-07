@@ -1,127 +1,348 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { verifyHash } from '@/lib/crypto';
-import { sendReceiptEmail } from '@/lib/email';
-import clientPromise, { getDb } from '@/lib/mongodb';
-import type { ProductDoc } from '@/lib/models/product';
-import type { OrderDoc, OrderItem } from '@/lib/models/order';
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { ObjectId } from "mongodb";
+import { sendReceiptEmail } from "@/lib/email";
+import clientPromise, { getDb } from "@/lib/mongodb";
+import {
+  CUSTOMER_SESSION_COOKIE,
+  verifyCustomerSession,
+} from "@/lib/customerSession";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  hashIdentifier,
+  rateLimitResponse,
+} from "@/lib/rateLimit";
+import { validateCartItems } from "@/lib/validation";
+import {
+  DAILY_ORDER_COUNTED_STATUSES,
+  DAILY_ORDER_LIMIT,
+  DAILY_ORDER_WINDOW_MS,
+  disallowedEmailMessage,
+  isAllowedOrderEmail,
+} from "@/lib/orderPolicy";
+import type { ProductDoc } from "@/lib/models/product";
+import { invalidatePublicProductsCache } from "@/lib/models/product";
+import {
+  nextOrderNumber,
+  type OrderDoc,
+  type OrderItem,
+} from "@/lib/models/order";
+import {
+  acquireCheckoutSlot,
+  releaseCheckoutSlot,
+} from "@/lib/models/checkoutGate";
 
 class InsufficientStockError extends Error {
-  constructor(public itemDescription: string, public available: number) {
+  constructor(
+    public itemDescription: string,
+    public available: number,
+  ) {
     super(`Insufficient stock for ${itemDescription}`);
+  }
+}
+
+class InvalidVariantError extends Error {
+  constructor(public detail: string) {
+    super(detail);
+  }
+}
+
+/** Raised inside the transaction when the address is over its daily cap. */
+class DailyOrderLimitError extends Error {
+  constructor(public placed: number) {
+    super(`Daily order limit reached (${placed})`);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // 1. Verify Authentication
+    // 1. Authenticate.
     const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get('session');
+    const session = verifyCustomerSession(
+      cookieStore.get(CUSTOMER_SESSION_COOKIE)?.value,
+    );
 
-    if (!sessionCookie) {
-      return NextResponse.json({ error: 'Unauthorized. Please log in.' }, { status: 401 });
+    if (!session) {
+      return NextResponse.json(
+        { error: "Session invalid or expired. Please log in again." },
+        { status: 401 },
+      );
     }
 
-    const { email, expires, hash } = JSON.parse(sessionCookie.value);
+    const { email } = session;
 
-    if (Date.now() > expires || !verifyHash(`${email}|${expires}`, hash)) {
-      return NextResponse.json({ error: 'Session invalid or expired.' }, { status: 401 });
+    // 2. Re-check the domain allowlist against the session's own email.
+    //
+    // The OTP endpoint already refuses outside addresses, so this looks
+    // redundant — it is not. Sessions last 24 hours and are signed, not
+    // stored, so any session minted before this policy existed (or before
+    // the allowlist was tightened) stays valid and would otherwise still
+    // be able to order. Checking at the point of effect, not only at the
+    // point of entry, is what makes the policy actually revocable.
+    if (!isAllowedOrderEmail(email)) {
+      return NextResponse.json(
+        { error: disallowedEmailMessage() },
+        { status: 403 },
+      );
     }
 
-    // 2. Parse Checkout Request
-    const { items } = await req.json();
-
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: 'Cart is empty or invalid.' }, { status: 400 });
+    // 3. Rate limit per session. Cheap backstop against order spam from a
+    // single authenticated mailbox; the concurrency gate below protects
+    // the cluster, this protects the order book.
+    const limit = await checkRateLimit(
+      `checkout:${hashIdentifier(email)}`,
+      RATE_LIMITS.checkoutPerSession,
+    );
+    if (!limit.ok) {
+      return rateLimitResponse(
+        limit,
+        "Too many checkout attempts. Please wait a moment and try again.",
+      );
     }
 
-    for (const cartItem of items) {
-      if (!cartItem.id || typeof cartItem.quantity !== 'number' || cartItem.quantity <= 0) {
-        return NextResponse.json({ error: 'Invalid cart item.' }, { status: 400 });
-      }
+    // 4. Validate the cart.
+    //
+    // This is the fix for the operator-injection hole: `items` arrives as
+    // `any` from `req.json()`, and previously only `!cartItem.id` stood
+    // between the client and the product query, so `{"id":{"$gt":""}}`
+    // reached Mongo as an operator and matched a product the shopper never
+    // chose. `validateCartItems` requires `id` to be a string matching the
+    // item-code shape and `quantity` to be a whole number in range, so
+    // nothing but a literal SKU can reach the filter below.
+    const body: unknown = await req.json();
+    const cart =
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>).items
+        : undefined;
+
+    const validation = validateCartItems(cart);
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    const items = validation.items;
+
+    // 5. Load-shed: cap how many checkouts run at once so a spike of
+    // simultaneous requests can't all hammer a shared, throttled Atlas
+    // free cluster together. Acquired after cheap validation (so a
+    // malformed request doesn't consume a slot) and released as soon as
+    // the DB work below is done, win or lose.
+    const leaseId = await acquireCheckoutSlot();
+    if (!leaseId) {
+      return NextResponse.json(
+        {
+          error:
+            "We're processing a lot of orders right now. Please try again in a few seconds.",
+        },
+        { status: 429, headers: { "Retry-After": "3" } },
+      );
     }
 
-    // 3. Check stock, decrement it, and record the order — all inside one
+    // 6. Check stock, decrement it, and record the order — all inside one
     // transaction, so a shortfall on any single item rolls back everything,
     // and the order record can never exist without the stock it consumed.
     const client = await clientPromise;
     const db = await getDb();
-    const products = db.collection<ProductDoc>('products');
-    const orders = db.collection<OrderDoc>('orders');
+    const products = db.collection<ProductDoc>("products");
+    const orders = db.collection<OrderDoc>("orders");
 
     let totalAmount = 0;
+    let orderNumber = "";
     const purchasedItems: OrderItem[] = [];
 
-    const session = client.startSession();
     try {
-      await session.withTransaction(async () => {
-        totalAmount = 0;
-        purchasedItems.length = 0;
+      const mongoSession = client.startSession();
+      try {
+        await mongoSession.withTransaction(async () => {
+          totalAmount = 0;
+          purchasedItems.length = 0;
 
-        for (const { id, quantity } of items) {
-          const updated = await products.findOneAndUpdate(
-            { _id: id, stock: { $gte: quantity } },
-            { $inc: { stock: -quantity }, $set: { updatedAt: new Date() } },
-            { session, returnDocument: 'after' }
-          );
+          // Daily order cap, counted inside the transaction.
+          //
+          // Counting here rather than with the Redis limiter is deliberate
+          // on two grounds. First, the cap is about orders actually
+          // placed, and that is a fact recorded in Mongo — a request-rate
+          // counter would also burn quota on checkouts that failed on
+          // stock, costing a customer one of their ten for an order they
+          // never got. Second, reading it inside the transaction closes
+          // the race: two simultaneous checkouts cannot both observe nine
+          // and both commit.
+          //
+          // A bounded `find` is used rather than countDocuments because a
+          // plain find is unambiguously safe inside a transaction, and
+          // there is no reason to count past the limit.
+          const since = new Date(Date.now() - DAILY_ORDER_WINDOW_MS);
+          const recent = await orders
+            .find(
+              {
+                buyerEmail: email,
+                createdAt: { $gte: since },
+                status: { $in: [...DAILY_ORDER_COUNTED_STATUSES] },
+              },
+              {
+                session: mongoSession,
+                projection: { _id: 1 },
+                limit: DAILY_ORDER_LIMIT,
+              },
+            )
+            .toArray();
 
-          if (!updated) {
-            const existing = await products.findOne({ _id: id }, { session });
-            if (!existing) {
-              throw new InsufficientStockError(id, 0);
-            }
-            throw new InsufficientStockError(existing.description, existing.stock);
+          if (recent.length >= DAILY_ORDER_LIMIT) {
+            throw new DailyOrderLimitError(recent.length);
           }
 
-          totalAmount += updated.price * quantity;
-          purchasedItems.push({ itemCode: id, description: updated.description, quantity, price: updated.price });
-        }
+          for (const { id, quantity, color, size } of items) {
+            const updated = await products.findOneAndUpdate(
+              { _id: id, stock: { $gte: quantity } },
+              { $inc: { stock: -quantity }, $set: { updatedAt: new Date() } },
+              { session: mongoSession, returnDocument: "after" },
+            );
 
-        const now = new Date();
-        await orders.insertOne(
-          {
-            buyerEmail: email,
-            items: purchasedItems,
-            total: totalAmount,
-            status: 'received',
-            createdAt: now,
-            updatedAt: now,
-          },
-          { session }
-        );
-      });
-    } catch (err) {
-      if (err instanceof InsufficientStockError) {
-        const message =
-          err.available > 0
-            ? `Only ${err.available} left of ${err.itemDescription}.`
-            : `${err.itemDescription} is out of stock.`;
-        return NextResponse.json({ error: message }, { status: 409 });
+            if (!updated) {
+              const existing = await products.findOne(
+                { _id: id },
+                { session: mongoSession },
+              );
+              if (!existing) {
+                throw new InsufficientStockError(id, 0);
+              }
+              throw new InsufficientStockError(
+                existing.description,
+                existing.stock,
+              );
+            }
+
+            // Variants are checked against what the product actually
+            // offers. Previously any string was accepted and stored, so an
+            // order could name a colour or size that does not exist and
+            // land on the packing list as if it did.
+            if (color && updated.colors?.length) {
+              const known = updated.colors.some((c) => c.name === color);
+              if (!known) {
+                throw new InvalidVariantError(
+                  `"${color}" is not an available colour for ${updated.description}.`,
+                );
+              }
+            } else if (color && !updated.colors?.length) {
+              throw new InvalidVariantError(
+                `${updated.description} does not come in different colours.`,
+              );
+            }
+
+            if (size && updated.sizes?.length) {
+              if (!updated.sizes.includes(size)) {
+                throw new InvalidVariantError(
+                  `"${size}" is not an available size for ${updated.description}.`,
+                );
+              }
+            } else if (size && !updated.sizes?.length) {
+              throw new InvalidVariantError(
+                `${updated.description} does not come in different sizes.`,
+              );
+            }
+
+            totalAmount += updated.price * quantity;
+            purchasedItems.push({
+              itemCode: id,
+              description: updated.description,
+              quantity,
+              price: updated.price,
+              color,
+              size,
+            });
+          }
+
+          const now = new Date();
+          orderNumber = await nextOrderNumber(db, mongoSession);
+
+          await orders.insertOne(
+            {
+              _id: new ObjectId(),
+              orderNumber,
+              buyerEmail: email,
+              items: purchasedItems,
+              total: totalAmount,
+              status: "received",
+              stockReleased: false,
+              statusHistory: [
+                {
+                  from: null,
+                  to: "received",
+                  at: now,
+                  actor: "customer",
+                  stockEffect: "reserved",
+                },
+              ],
+              createdAt: now,
+              updatedAt: now,
+            },
+            { session: mongoSession },
+          );
+        });
+      } catch (err) {
+        if (err instanceof InsufficientStockError) {
+          const message =
+            err.available > 0
+              ? `Only ${err.available} left of ${err.itemDescription}.`
+              : `${err.itemDescription} is out of stock.`;
+          return NextResponse.json({ error: message }, { status: 409 });
+        }
+        if (err instanceof InvalidVariantError) {
+          return NextResponse.json({ error: err.detail }, { status: 400 });
+        }
+        if (err instanceof DailyOrderLimitError) {
+          return NextResponse.json(
+            {
+              error: `You've placed ${DAILY_ORDER_LIMIT} orders in the last 24 hours, which is the limit. Please try again tomorrow, or contact the team if you need more.`,
+            },
+            { status: 429 },
+          );
+        }
+        throw err;
+      } finally {
+        await mongoSession.endSession();
       }
-      throw err;
     } finally {
-      await session.endSession();
+      await releaseCheckoutSlot(leaseId);
     }
 
-    // 4. Send Email Receipt — a delivery concern, not an inventory one, so a
+    // Stock just changed — drop the cached public product list so the next
+    // storefront read reflects it instead of waiting out the TTL.
+    invalidatePublicProductsCache();
+
+    // 7. Send Email Receipt — a delivery concern, not an inventory one, so a
     // failure here doesn't roll back the stock decrement or the order.
     try {
       await sendReceiptEmail(
         email,
         totalAmount,
-        purchasedItems.map((item) => ({ name: item.description, quantity: item.quantity, price: item.price }))
+        purchasedItems.map((item) => ({
+          name: item.description,
+          quantity: item.quantity,
+          price: item.price,
+          color: item.color,
+          size: item.size,
+        })),
+        orderNumber,
       );
     } catch (emailError) {
-      console.error('Order succeeded but receipt email failed to send:', emailError);
+      console.error(
+        "Order succeeded but receipt email failed to send:",
+        emailError,
+      );
     }
 
-    // 5. Respond with Success
+    // 8. Respond with Success
     return NextResponse.json({
       success: true,
-      message: 'Checkout successful! Receipt sent to your email.',
+      orderNumber,
+      message: `Checkout successful! Your order reference is ${orderNumber}. A receipt is on its way to your email.`,
     });
   } catch (error) {
-    console.error('Error processing checkout:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error("Error processing checkout:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }

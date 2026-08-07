@@ -1,92 +1,127 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { verifyHash, generateHash } from '@/lib/crypto';
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import {
+  CUSTOMER_SESSION_COOKIE,
+  OTP_CHALLENGE_COOKIE,
+  sessionCookieOptions,
+  signCustomerSession,
+  verifyCustomerSession,
+} from "@/lib/customerSession";
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  getClientIp,
+  rateLimitResponse,
+} from "@/lib/rateLimit";
+import { consumeOtpChallenge } from "@/lib/models/otpChallenge";
 
 export async function POST(req: NextRequest) {
   try {
-    const { otp } = await req.json();
+    const body: unknown = await req.json();
+    const otp =
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>).otp
+        : undefined;
 
-    if (!otp || typeof otp !== 'string') {
-      return NextResponse.json({ error: 'OTP is required' }, { status: 400 });
+    if (typeof otp !== "string" || !/^\d{6}$/.test(otp)) {
+      return NextResponse.json(
+        { error: "Enter the 6-digit code from your email." },
+        { status: 400 },
+      );
+    }
+
+    // Per-challenge attempts are capped in consumeOtpChallenge (5, then the
+    // challenge is burned). This per-IP limit exists so an attacker cannot
+    // sidestep that cap by cycling through fresh challenges.
+    const ip = getClientIp(req);
+    const limit = await checkRateLimit(
+      `otp-verify:ip:${ip}`,
+      RATE_LIMITS.otpVerifyPerIp,
+    );
+    if (!limit.ok) {
+      return rateLimitResponse(
+        limit,
+        "Too many incorrect codes. Please wait a few minutes before trying again.",
+      );
     }
 
     const cookieStore = await cookies();
-    const challengeCookie = cookieStore.get('otp_challenge');
+    const challengeId = cookieStore.get(OTP_CHALLENGE_COOKIE)?.value;
 
-    if (!challengeCookie) {
-      return NextResponse.json({ error: 'No OTP challenge found. Please request a new code.' }, { status: 400 });
+    if (!challengeId) {
+      return NextResponse.json(
+        { error: "No code request found. Please request a new code." },
+        { status: 400 },
+      );
     }
 
-    const { email, expires, hash } = JSON.parse(challengeCookie.value);
+    const result = await consumeOtpChallenge(challengeId, otp);
 
-    // 1. Check if the OTP has expired
-    if (Date.now() > expires) {
-      return NextResponse.json({ error: 'OTP has expired. Please request a new code.' }, { status: 400 });
+    switch (result.status) {
+      case "locked":
+        cookieStore.delete(OTP_CHALLENGE_COOKIE);
+        return NextResponse.json(
+          {
+            error:
+              "Too many incorrect attempts. Please request a new code.",
+          },
+          { status: 429 },
+        );
+
+      case "expired":
+        cookieStore.delete(OTP_CHALLENGE_COOKIE);
+        return NextResponse.json(
+          { error: "That code has expired. Please request a new one." },
+          { status: 400 },
+        );
+
+      case "invalid":
+        return NextResponse.json(
+          {
+            error: `Incorrect code. ${result.attemptsRemaining} attempt${
+              result.attemptsRemaining === 1 ? "" : "s"
+            } remaining.`,
+          },
+          { status: 401 },
+        );
     }
 
-    // 2. Verify the hash using the submitted OTP
-    const payloadToVerify = `${email}|${expires}|${otp}`;
-    const isValid = verifyHash(payloadToVerify, hash);
+    // Verified. The challenge is now marked consumed, so this code cannot
+    // be replayed even if the same request is sent twice.
+    cookieStore.delete(OTP_CHALLENGE_COOKIE);
 
-    if (!isValid) {
-      return NextResponse.json({ error: 'Invalid OTP' }, { status: 401 });
-    }
+    const { value, maxAgeSeconds } = signCustomerSession(result.email);
+    cookieStore.set(
+      CUSTOMER_SESSION_COOKIE,
+      value,
+      sessionCookieOptions(maxAgeSeconds),
+    );
 
-    // 3. Clear the challenge cookie
-    cookieStore.delete('otp_challenge');
-
-    // 4. Set the authenticated session cookie
-    // We sign the email so it cannot be tampered with by the client.
-    const sessionExpires = Date.now() + 24 * 60 * 60 * 1000; // 1 day
-    const sessionHash = generateHash(`${email}|${sessionExpires}`);
-    const sessionValue = JSON.stringify({ email, expires: sessionExpires, hash: sessionHash });
-
-    cookieStore.set('session', sessionValue, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 24 * 60 * 60, // 1 day
-      path: '/',
-    });
-
-    return NextResponse.json({ success: true, email });
+    return NextResponse.json({ success: true, email: result.email });
   } catch (error) {
-    console.error('Error verifying OTP:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error("Error verifying OTP:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }
 
-export async function GET(req: NextRequest) {
-  // Utility endpoint to check if the user is currently logged in.
+export async function GET() {
   const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get('session');
+  const session = verifyCustomerSession(
+    cookieStore.get(CUSTOMER_SESSION_COOKIE)?.value,
+  );
 
-  if (!sessionCookie) {
+  if (!session) {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
-  try {
-    const { email, expires, hash } = JSON.parse(sessionCookie.value);
-    
-    if (Date.now() > expires) {
-      return NextResponse.json({ authenticated: false }, { status: 401 });
-    }
-
-    const isValid = verifyHash(`${email}|${expires}`, hash);
-
-    if (isValid) {
-      return NextResponse.json({ authenticated: true, email });
-    } else {
-      return NextResponse.json({ authenticated: false }, { status: 401 });
-    }
-  } catch (e) {
-    return NextResponse.json({ authenticated: false }, { status: 401 });
-  }
+  return NextResponse.json({ authenticated: true, email: session.email });
 }
 
-export async function DELETE(req: NextRequest) {
-  // Utility endpoint to logout
+export async function DELETE() {
   const cookieStore = await cookies();
-  cookieStore.delete('session');
+  cookieStore.delete(CUSTOMER_SESSION_COOKIE);
   return NextResponse.json({ success: true });
 }

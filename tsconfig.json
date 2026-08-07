@@ -11,6 +11,11 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // scripts/*.ts run directly under `node --experimental-strip-types`,
+    // which requires explicit .ts import specifiers. Safe here because
+    // noEmit is on — tsc only type-checks, it never resolves these paths
+    // for output.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

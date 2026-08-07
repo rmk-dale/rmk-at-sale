@@ -127,8 +127,21 @@ export async function POST(req: NextRequest) {
       success: true,
       message: "A checkout code is on its way.",
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating OTP:", error);
+
+    // Nodemailer SMTP rejection (e.g. "550 5.1.1 The email account that you tried to reach does not exist")
+    if (
+      error.responseCode === 550 ||
+      error.responseCode === 553 ||
+      (error.rejected && error.rejected.length > 0)
+    ) {
+      return NextResponse.json(
+        { error: "This email address does not exist or cannot receive mail." },
+        { status: 400 },
+      );
+    }
+
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 },

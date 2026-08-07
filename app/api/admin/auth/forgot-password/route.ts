@@ -77,8 +77,21 @@ export async function POST(req: NextRequest) {
     await sendAdminPasswordResetEmail(admin.email, resetUrl);
 
     return genericResponse;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error requesting admin password reset:", error);
+
+    // If the SMTP server rejects the email, fail silently to prevent enumeration
+    if (
+      error.responseCode === 550 ||
+      error.responseCode === 553 ||
+      (error.rejected && error.rejected.length > 0)
+    ) {
+      return NextResponse.json({
+        success: true,
+        message: "If that email is registered, a reset link has been sent.",
+      });
+    }
+
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 },

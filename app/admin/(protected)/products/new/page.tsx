@@ -125,21 +125,22 @@ export default function NewProductPage() {
               className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-zinc-600 mb-2">
-              Regular price
-            </label>
-            <input
-              required={!hasVariants}
-              type="number"
-              min="0"
-              step="0.01"
-              value={hasVariants ? computedPrice : price}
-              onChange={(e) => setPrice(e.target.value)}
-              disabled={hasVariants}
-              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:bg-zinc-50 disabled:text-zinc-500 disabled:cursor-not-allowed"
-            />
-          </div>
+          {!hasVariants && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-600 mb-2">
+                Regular price
+              </label>
+              <input
+                required
+                type="number"
+                min="0"
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+              />
+            </div>
+          )}
         </div>
 
         <div>
@@ -170,21 +171,22 @@ export default function NewProductPage() {
         </div>
 
         <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-600 mb-2">
-              Inventory
-            </label>
-            <input
-              required={!hasVariants}
-              type="number"
-              min="0"
-              step="1"
-              value={hasVariants ? computedStock : stock}
-              onChange={(e) => setStock(e.target.value)}
-              disabled={hasVariants}
-              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:bg-zinc-50 disabled:text-zinc-500 disabled:cursor-not-allowed"
-            />
-          </div>
+          {!hasVariants && (
+            <div>
+              <label className="block text-sm font-medium text-zinc-600 mb-2">
+                Inventory
+              </label>
+              <input
+                required
+                type="number"
+                min="0"
+                step="1"
+                value={stock}
+                onChange={(e) => setStock(e.target.value)}
+                className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-zinc-600 mb-2">
               Brand

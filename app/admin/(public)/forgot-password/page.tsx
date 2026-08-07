@@ -52,7 +52,7 @@ export default function AdminForgotPasswordPage() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
+              className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors"
             >
               {loading ? "Sending…" : "Send reset link"}
             </button>

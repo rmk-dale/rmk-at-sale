@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       },
     );
 
-    const appUrl = process.env.APP_URL || "http://localhost:3000";
+    const appUrl = process.env.APP_URL || "https://rmk-at-sale.vercel.app";
     const resetUrl = `${appUrl}/admin/reset-password?id=${admin._id.toString()}&token=${token}`;
     await sendAdminPasswordResetEmail(admin.email, resetUrl);
 

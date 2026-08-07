@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { Lock } from "lucide-react";
 
 export default function AdminLoginPage() {
@@ -60,6 +61,9 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm bg-surface border border-border rounded-2xl p-8">
+        <div className="flex justify-center mb-6">
+          <Image src="/rwithtag.png" alt="RMK at Sale Logo" width={140} height={140} priority />
+        </div>
         <h1 className="text-xl font-semibold text-zinc-900 mb-1">
           Admin sign in
         </h1>
@@ -96,7 +100,7 @@ export default function AdminLoginPage() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors"
             >
               {loading ? "Checking…" : "Continue"}
             </button>
@@ -128,7 +132,7 @@ export default function AdminLoginPage() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors"
             >
               {loading ? "Verifying…" : "Verify & sign in"}
               {!loading && <Lock className="w-4 h-4" />}

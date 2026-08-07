@@ -352,7 +352,7 @@ export default function CartPage() {
                   <button
                     disabled={loading || !acceptedTerms || !acceptedPrivacy}
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3.5 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors mt-2"
+                    className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3.5 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors mt-2"
                   >
                     {loading ? "Sending code..." : "Send checkout code"}
                   </button>
@@ -382,7 +382,7 @@ export default function CartPage() {
                   <button
                     disabled={loading}
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3.5 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3.5 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors"
                   >
                     {loading ? "Verifying..." : "Verify & pay securely"}
                     {!loading && <Lock className="w-4 h-4" />}

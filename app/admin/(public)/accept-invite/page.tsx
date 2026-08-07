@@ -120,7 +120,7 @@ function AcceptInviteForm() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
+              className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors"
             >
               {loading ? "Saving…" : "Continue to 2FA setup"}
             </button>
@@ -167,7 +167,7 @@ function AcceptInviteForm() {
             <button
               disabled={loading}
               type="submit"
-              className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
+              className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors"
             >
               {loading ? "Confirming…" : "Confirm & activate account"}
             </button>

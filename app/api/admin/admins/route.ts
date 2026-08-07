@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       updatedAt: now,
     });
 
-    const appUrl = process.env.APP_URL || "http://localhost:3000";
+    const appUrl = process.env.APP_URL || "https://rmk-at-sale.vercel.app";
     const inviteUrl = `${appUrl}/admin/accept-invite?id=${result.insertedId.toString()}&token=${token}`;
     await sendAdminInviteEmail(email, inviteUrl, owner.email);
 

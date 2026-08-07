@@ -90,9 +90,7 @@ export default function ProductCard({
           </span>
         </div>
 
-        <p className="text-zinc-500 text-sm mb-3 flex-grow">
-          {product.description}
-        </p>
+        <div className="flex-grow" />
 
         {product.colors && product.colors.length > 0 && (
           <div className="flex items-center gap-1.5 mb-4">

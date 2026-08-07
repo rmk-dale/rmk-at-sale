@@ -196,7 +196,7 @@ export default function CartPage() {
           <div className="lg:col-span-2 space-y-4">
             {items.map((item) => (
               <div
-                key={item.id}
+                key={item.cartItemId || item.id}
                 className="flex flex-col sm:flex-row items-center gap-6 bg-surface p-5 rounded-2xl border border-border relative"
               >
                 <div className="w-20 h-20 bg-zinc-50 rounded-xl flex-shrink-0 border border-border relative overflow-hidden flex items-center justify-center">
@@ -216,6 +216,11 @@ export default function CartPage() {
                   <h3 className="text-base font-medium text-zinc-900 mb-1">
                     {item.name}
                   </h3>
+                  {(item.color || item.size) && (
+                    <p className="text-sm text-zinc-500 mb-1">
+                      {[item.color, item.size].filter(Boolean).join(" | ")}
+                    </p>
+                  )}
                   <p className="text-zinc-500 font-medium text-sm">
                     ₱{item.price.toFixed(2)}
                   </p>
@@ -223,7 +228,7 @@ export default function CartPage() {
 
                 <div className="flex items-center gap-4 bg-zinc-50 rounded-full px-4 py-2 border border-border">
                   <button
-                    onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                    onClick={() => updateQuantity(item.cartItemId!, item.quantity - 1)}
                     className="p-1 text-zinc-600 hover:text-zinc-900 transition-colors"
                   >
                     <Minus className="w-4 h-4" />
@@ -232,7 +237,7 @@ export default function CartPage() {
                     {item.quantity}
                   </span>
                   <button
-                    onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                    onClick={() => updateQuantity(item.cartItemId!, item.quantity + 1)}
                     className="p-1 text-zinc-600 hover:text-zinc-900 transition-colors"
                   >
                     <Plus className="w-4 h-4" />
@@ -240,7 +245,7 @@ export default function CartPage() {
                 </div>
 
                 <button
-                  onClick={() => removeItem(item.id)}
+                  onClick={() => removeItem(item.cartItemId!)}
                   className="p-3 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
                 >
                   <Trash2 className="w-5 h-5" />

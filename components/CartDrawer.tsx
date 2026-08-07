@@ -62,7 +62,7 @@ export default function CartDrawer() {
           ) : (
             <div className="space-y-5">
               {items.map((item) => (
-                <div key={item.id} className="flex items-center gap-4">
+                <div key={item.cartItemId || item.id} className="flex items-center gap-4">
                   <div className="w-16 h-16 bg-zinc-50 rounded-xl border border-border flex-shrink-0 relative overflow-hidden flex items-center justify-center">
                     {item.image ? (
                       <Image
@@ -81,14 +81,19 @@ export default function CartDrawer() {
                     <p className="text-sm font-medium text-zinc-900 truncate">
                       {item.name}
                     </p>
-                    <p className="text-sm text-zinc-500">
+                    {(item.color || item.size) && (
+                      <p className="text-xs text-zinc-500 mt-0.5 truncate">
+                        {[item.color, item.size].filter(Boolean).join(" | ")}
+                      </p>
+                    )}
+                    <p className="text-sm text-zinc-500 mt-1">
                       ₱{item.price.toFixed(2)}
                     </p>
 
                     <div className="flex items-center gap-3 mt-2 bg-zinc-50 rounded-full px-3 py-1 border border-border w-fit">
                       <button
                         onClick={() =>
-                          updateQuantity(item.id, item.quantity - 1)
+                          updateQuantity(item.cartItemId!, item.quantity - 1)
                         }
                         className="text-zinc-600 hover:text-zinc-900 transition-colors"
                       >
@@ -99,7 +104,7 @@ export default function CartDrawer() {
                       </span>
                       <button
                         onClick={() =>
-                          updateQuantity(item.id, item.quantity + 1)
+                          updateQuantity(item.cartItemId!, item.quantity + 1)
                         }
                         className="text-zinc-600 hover:text-zinc-900 transition-colors"
                       >
@@ -109,7 +114,7 @@ export default function CartDrawer() {
                   </div>
 
                   <button
-                    onClick={() => removeItem(item.id)}
+                    onClick={() => removeItem(item.cartItemId!)}
                     className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all flex-shrink-0"
                     aria-label="Remove item"
                   >

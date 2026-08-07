@@ -52,8 +52,19 @@ export async function PATCH(
 
   try {
     const { id } = await params;
-    const { name, description, price, stock, image, hoverImage, brand, sizes, colors, featured } =
+    const { newItemCode, name, description, price, stock, image, hoverImage, brand, sizes, colors, featured } =
       await req.json();
+
+    let targetId = id;
+    if (newItemCode !== undefined && typeof newItemCode === "string" && newItemCode.trim() !== id) {
+      if (!newItemCode.trim()) {
+        return NextResponse.json(
+          { error: "Item Code cannot be empty." },
+          { status: 400 },
+        );
+      }
+      targetId = newItemCode.trim();
+    }
 
     const update: Record<string, unknown> = { updatedAt: new Date() };
 
@@ -154,6 +165,16 @@ export async function PATCH(
       );
     }
 
+    if (targetId !== id) {
+      const existingNew = await products.findOne({ _id: targetId });
+      if (existingNew) {
+        return NextResponse.json(
+          { error: `Item code ${targetId} is already in use.` },
+          { status: 400 },
+        );
+      }
+    }
+
     // Price changes on an existing product are owner-only.
     //
     // Price is the one field with direct financial consequence and the
@@ -177,11 +198,19 @@ export async function PATCH(
       }
     }
 
-    const result = await products.findOneAndUpdate(
-      { _id: id },
-      { $set: update },
-      { returnDocument: "after" },
-    );
+    let result;
+    if (targetId !== id) {
+      const newDoc = { ...previous, ...update, _id: targetId };
+      await products.insertOne(newDoc as any);
+      await products.deleteOne({ _id: id });
+      result = newDoc;
+    } else {
+      result = await products.findOneAndUpdate(
+        { _id: id },
+        { $set: update },
+        { returnDocument: "after" },
+      );
+    }
 
     if (!result) {
       return NextResponse.json(
@@ -191,6 +220,10 @@ export async function PATCH(
     }
 
     invalidatePublicProductsCache();
+
+    if (targetId !== id) {
+      update._id = targetId;
+    }
 
     const changes = diffFields(
       previous as unknown as Record<string, unknown>,
@@ -204,7 +237,7 @@ export async function PATCH(
         admin,
         action: "product.update",
         targetType: "product",
-        targetId: id,
+        targetId: targetId,
         targetLabel: previous.name || previous.description,
         changes,
         ip: getClientIp(req),

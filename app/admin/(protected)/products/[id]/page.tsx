@@ -30,6 +30,7 @@ export default function EditProductPage() {
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [itemCode, setItemCode] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -61,6 +62,7 @@ export default function EditProductPage() {
         if (!product) {
           setNotFound(true);
         } else {
+          setItemCode(product._id);
           setName(product.name || product.description || "");
           setDescription(product.description);
           setPrice(String(product.price));
@@ -106,6 +108,7 @@ export default function EditProductPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          newItemCode: itemCode.trim(),
           name: name.trim(),
           description: description.trim(),
           price: Number(price),
@@ -161,6 +164,17 @@ export default function EditProductPage() {
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-zinc-600 mb-2">
+              Item Code
+            </label>
+            <input
+              required
+              value={itemCode}
+              onChange={(e) => setItemCode(e.target.value)}
+              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-zinc-600 mb-2">
               Regular price
             </label>
             <input
@@ -173,6 +187,9 @@ export default function EditProductPage() {
               className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
             />
           </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-zinc-600 mb-2">
               Inventory

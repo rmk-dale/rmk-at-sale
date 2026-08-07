@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { ObjectId } from "mongodb";
 import { ADMIN_SESSION_COOKIE, verifyAdminSession } from "@/lib/adminAuth";
@@ -7,8 +8,18 @@ import { getAdminsCollection, type AdminDoc } from "@/lib/models/admin";
  * Verifies the admin_session cookie AND re-fetches the admin document, so
  * disabling an admin (or changing their role) takes effect immediately on
  * their next request rather than waiting for the signed cookie to expire.
+ *
+ * Wrapped in React's `cache` so the lookup is deduped **within a single
+ * request**. Rendering one admin screen calls this at least twice — the
+ * protected layout guards the shell, and the page or route handler guards
+ * the data — which was two identical `findOne`s per navigation.
+ *
+ * This is not a TTL cache and deliberately so: the memo lives and dies
+ * with one request, so the "re-read the admin on every request" property
+ * that makes revocation immediate is fully preserved. A disabled admin is
+ * still locked out on their very next request, not up to some TTL later.
  */
-export async function requireAdmin(): Promise<AdminDoc | null> {
+export const requireAdmin = cache(async function requireAdmin(): Promise<AdminDoc | null> {
   const cookieStore = await cookies();
   const payload = verifyAdminSession(
     cookieStore.get(ADMIN_SESSION_COOKIE)?.value,
@@ -33,7 +44,7 @@ export async function requireAdmin(): Promise<AdminDoc | null> {
   if ((admin.sessionEpoch ?? 0) !== payload.epoch) return null;
 
   return admin;
-}
+});
 
 /**
  * Invalidates every existing session for an admin by bumping their epoch.

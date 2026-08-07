@@ -11,6 +11,7 @@
     "seed:admin": "node --experimental-strip-types scripts/seed-admin.ts",
     "check:admin": "node --experimental-strip-types scripts/check-admin.ts",
     "check:ratelimit": "node --experimental-strip-types scripts/check-ratelimit.ts",
+    "check:cache": "node --experimental-strip-types scripts/check-cache.ts",
     "check:security": "node --experimental-strip-types scripts/security-checks.ts",
     "migrate:orders": "node --experimental-strip-types scripts/migrate-orders.ts"
   },

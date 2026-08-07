@@ -11,7 +11,7 @@ import {
   type OrderStatusEvent,
 } from "@/lib/models/order";
 import type { ProductDoc } from "@/lib/models/product";
-import { invalidatePublicProductsCache } from "@/lib/models/product";
+import { invalidateProductCaches } from "@/lib/revalidate";
 import { asString } from "@/lib/validation";
 import { recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
@@ -218,7 +218,9 @@ export async function PATCH(
     }
 
     if (stockEffect !== "none") {
-      invalidatePublicProductsCache();
+      // Cancelling or restocking an order touches several products at
+      // once, so this clears every product page rather than one.
+      invalidateProductCaches();
     }
 
     const updated = await orders.findOne({ _id: order._id });

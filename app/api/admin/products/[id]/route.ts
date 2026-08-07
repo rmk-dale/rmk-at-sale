@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminGuard";
-import {
-  getProductsCollection,
-  invalidatePublicProductsCache,
-  ColorVariant,
-} from "@/lib/models/product";
+import { getProductsCollection, ColorVariant } from "@/lib/models/product";
+import { invalidateProductCaches } from "@/lib/revalidate";
+import { NO_STORE_CACHE_HEADERS } from "@/lib/httpCache";
 import { diffFields, recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
 
@@ -41,6 +39,51 @@ function parseColors(input: unknown): ColorVariant[] | null {
   const firstDefaultIndex = colors.findIndex((c) => c.isDefault);
   const defaultIndex = firstDefaultIndex === -1 ? 0 : firstDefaultIndex;
   return colors.map((c, i) => ({ ...c, isDefault: i === defaultIndex }));
+}
+
+/**
+ * A single product, for the edit form.
+ *
+ * The form previously loaded `/api/admin/products` and picked its item out
+ * of the full catalog client-side — a whole-collection read and a
+ * whole-catalog payload to populate one form. This is an indexed `_id`
+ * lookup instead.
+ *
+ * Uncached on purpose: an admin opening the editor must see the current
+ * document, not a copy up to 15 seconds old, or two admins editing in
+ * sequence can silently overwrite each other.
+ */
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const admin = await requireAdmin();
+  if (!admin)
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403, headers: NO_STORE_CACHE_HEADERS },
+    );
+
+  try {
+    const { id } = await params;
+    const products = await getProductsCollection();
+    const product = await products.findOne({ _id: id });
+
+    if (!product) {
+      return NextResponse.json(
+        { error: `Item ${id} not found.` },
+        { status: 404, headers: NO_STORE_CACHE_HEADERS },
+      );
+    }
+
+    return NextResponse.json(product, { headers: NO_STORE_CACHE_HEADERS });
+  } catch (error) {
+    console.error("Error fetching product:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500, headers: NO_STORE_CACHE_HEADERS },
+    );
+  }
 }
 
 export async function PATCH(
@@ -219,7 +262,12 @@ export async function PATCH(
       );
     }
 
-    invalidatePublicProductsCache();
+    // An item-code change moves the product to a new URL, so the page at
+    // the old code has to be cleared as well as the one at the new code —
+    // otherwise the old path keeps serving a product that no longer lives
+    // there until its own TTL lapses.
+    invalidateProductCaches(id);
+    if (targetId !== id) invalidateProductCaches(targetId);
 
     if (targetId !== id) {
       update._id = targetId;

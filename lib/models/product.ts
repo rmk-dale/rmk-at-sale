@@ -82,8 +82,27 @@ export async function getPublicProducts(): Promise<PublicProduct[]> {
   });
 }
 
+/**
+ * One product, served off the same cached list rather than its own query.
+ *
+ * The catalog is small and already resident, so a findOne here would be a
+ * second Atlas round trip for data we are holding in memory — and it would
+ * miss the request-collapsing that makes the list cheap under load. If the
+ * catalog ever grows past what's sensible to keep in memory, this is the
+ * seam to swap for a keyed cache over `findOne({ _id: id })`.
+ */
+export async function getPublicProductById(
+  id: string,
+): Promise<PublicProduct | null> {
+  const all = await getPublicProducts();
+  return all.find((p) => p.id === id) ?? null;
+}
+
 /** Call after any write that changes product data or stock, so the
- * storefront doesn't serve a stale cached list until the TTL expires. */
+ * storefront doesn't serve a stale cached list until the TTL expires.
+ *
+ * Prefer `invalidateProductCaches` from lib/revalidate.ts at route-handler
+ * call sites — it clears the rendered pages as well as this list. */
 export function invalidatePublicProductsCache() {
   publicProductsCache.invalidate();
 }

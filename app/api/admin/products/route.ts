@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminGuard";
-import {
-  getProductsCollection,
-  invalidatePublicProductsCache,
-  ColorVariant,
-} from "@/lib/models/product";
+import { getProductsCollection, ColorVariant } from "@/lib/models/product";
+import { invalidateProductCaches } from "@/lib/revalidate";
 import { recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
 
@@ -159,7 +156,7 @@ export async function POST(req: NextRequest) {
       updatedAt: now,
     });
 
-    invalidatePublicProductsCache();
+    invalidateProductCaches(itemCode);
 
     await recordAudit({
       admin,

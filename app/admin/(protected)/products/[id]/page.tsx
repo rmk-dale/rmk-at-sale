@@ -45,37 +45,53 @@ export default function EditProductPage() {
   const [saving, setSaving] = useState(false);
   const [availableBrands, setAvailableBrands] = useState<{id: string, name: string}[]>([]);
 
+  // One effect, both requests in parallel. The brand list and the product
+  // don't depend on each other, and fetching the product by id means this
+  // no longer downloads the whole catalog to populate one form.
   useEffect(() => {
-    fetch("/api/admin/brands")
-      .then((res) => res.json())
-      .then((data) => {
-        setAvailableBrands(Array.isArray(data) ? data : []);
-      })
-      .catch((err) => console.error("Failed to fetch brands", err));
-  }, []);
+    let cancelled = false;
 
-  useEffect(() => {
-    fetch("/api/admin/products")
-      .then((res) => res.json())
-      .then((data: AdminProduct[]) => {
-        const product = data.find((p) => p._id === id);
-        if (!product) {
-          setNotFound(true);
-        } else {
-          setItemCode(product._id);
-          setName(product.name || product.description || "");
-          setDescription(product.description);
-          setPrice(String(product.price));
-          setStock(String(product.stock));
-          setImage(product.image || "");
-          setHoverImage(product.hoverImage || "");
-          setBrand(product.brand || "");
-          setSizes(product.sizes || []);
-          setColors(product.colors || []);
-          setFeatured(product.featured || false);
-        }
-        setLoading(false);
-      });
+    (async () => {
+      const [brandsRes, productRes] = await Promise.allSettled([
+        fetch("/api/admin/brands"),
+        fetch(`/api/admin/products/${encodeURIComponent(id)}`),
+      ]);
+
+      if (cancelled) return;
+
+      if (brandsRes.status === "fulfilled" && brandsRes.value.ok) {
+        const data = await brandsRes.value.json();
+        if (!cancelled) setAvailableBrands(Array.isArray(data) ? data : []);
+      } else {
+        console.error("Failed to fetch brands", brandsRes);
+      }
+
+      if (cancelled) return;
+
+      if (productRes.status === "fulfilled" && productRes.value.ok) {
+        const product: AdminProduct = await productRes.value.json();
+        if (cancelled) return;
+        setItemCode(product._id);
+        setName(product.name || product.description || "");
+        setDescription(product.description);
+        setPrice(String(product.price));
+        setStock(String(product.stock));
+        setImage(product.image || "");
+        setHoverImage(product.hoverImage || "");
+        setBrand(product.brand || "");
+        setSizes(product.sizes || []);
+        setColors(product.colors || []);
+        setFeatured(product.featured || false);
+      } else {
+        setNotFound(true);
+      }
+
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const validColors = colors.filter((c) => c.name.trim() && c.image);

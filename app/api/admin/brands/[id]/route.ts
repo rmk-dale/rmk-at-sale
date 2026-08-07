@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminGuard";
-import {
-  getBrandsCollection,
-  invalidatePublicBrandsCache,
-} from "@/lib/models/brand";
+import { getBrandsCollection } from "@/lib/models/brand";
+import { invalidateBrandCaches } from "@/lib/revalidate";
 import { ObjectId } from "mongodb";
 import { getProductsCollection } from "@/lib/models/product";
 import { recordAudit } from "@/lib/models/auditLog";
@@ -53,7 +51,7 @@ export async function DELETE(
 
     await brands.deleteOne({ _id: brand._id });
 
-    invalidatePublicBrandsCache();
+    invalidateBrandCaches();
 
     await recordAudit({
       admin,

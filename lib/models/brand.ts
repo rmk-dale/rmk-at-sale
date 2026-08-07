@@ -41,7 +41,10 @@ export async function getPublicBrands(): Promise<PublicBrand[]> {
   });
 }
 
-/** Call after any write that adds/removes/renames a brand. */
+/** Call after any write that adds/removes/renames a brand.
+ *
+ * Prefer `invalidateBrandCaches` from lib/revalidate.ts at route-handler
+ * call sites — it clears the rendered storefront as well as this list. */
 export function invalidatePublicBrandsCache() {
   publicBrandsCache.invalidate();
 }

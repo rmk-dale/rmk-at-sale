@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminGuard";
-import {
-  getBrandsCollection,
-  invalidatePublicBrandsCache,
-  toPublicBrand,
-} from "@/lib/models/brand";
+import { getBrandsCollection, toPublicBrand } from "@/lib/models/brand";
+import { invalidateBrandCaches } from "@/lib/revalidate";
 import { ObjectId } from "mongodb";
 import { escapeRegex } from "@/lib/validation";
 import { recordAudit } from "@/lib/models/auditLog";
@@ -66,7 +63,7 @@ export async function POST(req: NextRequest) {
       updatedAt: now,
     });
 
-    invalidatePublicBrandsCache();
+    invalidateBrandCaches();
 
     await recordAudit({
       admin,

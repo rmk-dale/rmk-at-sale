@@ -22,7 +22,7 @@ import {
   isAllowedOrderEmail,
 } from "@/lib/orderPolicy";
 import type { ProductDoc } from "@/lib/models/product";
-import { invalidatePublicProductsCache } from "@/lib/models/product";
+import { invalidateProductCaches } from "@/lib/revalidate";
 import {
   nextOrderNumber,
   type OrderDoc,
@@ -306,9 +306,10 @@ export async function POST(req: NextRequest) {
       await releaseCheckoutSlot(leaseId);
     }
 
-    // Stock just changed — drop the cached public product list so the next
-    // storefront read reflects it instead of waiting out the TTL.
-    invalidatePublicProductsCache();
+    // Stock just changed — drop the cached product list and the rendered
+    // storefront pages so the next read reflects it instead of waiting out
+    // the TTL. An order can span several products, so this clears them all.
+    invalidateProductCaches();
 
     // 7. Send the receipt after the response, not before it.
     //

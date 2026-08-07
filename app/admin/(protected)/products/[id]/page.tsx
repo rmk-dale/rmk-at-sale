@@ -109,6 +109,10 @@ export default function EditProductPage() {
   const finalImage = defaultColor ? defaultColor.image : image;
   const finalHoverImage = defaultColor ? defaultColor.hoverImage : hoverImage;
 
+  const hasVariants = validColors.length > 0 || sizes.length > 0;
+  const computedPrice = hasVariants && variants.length > 0 ? Math.min(...variants.map((v) => v.price)) : price;
+  const computedStock = hasVariants && variants.length > 0 ? variants.reduce((s, v) => s + v.stock, 0) : stock;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -131,8 +135,8 @@ export default function EditProductPage() {
           newItemCode: itemCode.trim(),
           name: name.trim(),
           description: description.trim(),
-          price: Number(price),
-          stock: Number(stock),
+          price: Number(computedPrice),
+          stock: Number(computedStock),
           image: finalImage,
           hoverImage: finalHoverImage || undefined,
           brand: brand.trim() || undefined,
@@ -199,13 +203,14 @@ export default function EditProductPage() {
               Regular price
             </label>
             <input
-              required
+              required={!hasVariants}
               type="number"
               min="0"
               step="0.01"
-              value={price}
+              value={hasVariants ? computedPrice : price}
               onChange={(e) => setPrice(e.target.value)}
-              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+              disabled={hasVariants}
+              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:bg-zinc-50 disabled:text-zinc-500 disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -216,13 +221,14 @@ export default function EditProductPage() {
               Inventory
             </label>
             <input
-              required
+              required={!hasVariants}
               type="number"
               min="0"
               step="1"
-              value={stock}
+              value={hasVariants ? computedStock : stock}
               onChange={(e) => setStock(e.target.value)}
-              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+              disabled={hasVariants}
+              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 disabled:bg-zinc-50 disabled:text-zinc-500 disabled:cursor-not-allowed"
             />
           </div>
         </div>

@@ -231,6 +231,67 @@ Changing the price of an *existing* product is now owner-only; staff keep stock,
 
 Existing `admin_session` cookies carry no `epoch` field, so `verifyAdminSession` rejects them and everyone signs in again — including whoever deploys. This is correct behaviour for a session-format change, but do it at a time when someone with owner credentials and their authenticator is available. No migration script is needed; `sessionEpoch` is created lazily by the first `$inc`.
 
+---
+
+# Mail and rate-limit corrections — applied 2026-08-07
+
+### Per-IP limits were sized for the wrong deployment — corrected
+
+The original limits assumed a public storefront, where one IP is a fair proxy for one actor. On an internal store everyone sits behind the same corporate NAT, so the whole company shares **one** IP. `otpRequestPerIp` at 5 per 15 minutes did not mean five attempts per person — it meant **the sixth colleague to shop in any quarter-hour was refused**. Every `PerIp` limit had the same defect; admin login at 10/15min gave the entire office ten sign-in attempts between them.
+
+This was a guaranteed outage on the first busy day, not a theoretical risk.
+
+| Limit | Was | Now |
+|---|---|---|
+| `otpRequestPerIp` | 5 / 15 min | 100 / 15 min |
+| `otpVerifyPerIp` | 15 / 15 min | 300 / 15 min |
+| `adminLoginPerIp` | 10 / 15 min | 60 / 15 min |
+| `admin2faPerIp` | 10 / 15 min | 60 / 15 min |
+| `adminForgotPerIp` | 5 / hr | 40 / hr |
+| `adminTokenEndpointPerIp` | 10 / 15 min | 60 / 15 min |
+
+**Per-account limits are unchanged and still tight** — they are what actually stops a targeted attack, and they are unaffected by which IP requests arrive from. Per-IP is now a coarse flood backstop. This is only safe because the domain allowlist means there is no anonymous attacker to throttle; if this ever becomes public, these must come back down.
+
+### Global send ceiling was above the provider's own quota
+
+`otpSendGlobal` was set to 500/hour without reference to the mail provider. Mail goes through Gmail, which allows roughly 500 recipients **per day** free, ~2,000 on Workspace — so the ceiling sat above the entire daily allowance and could never trip before Gmail cut sending off. Now 100/hour, configurable via `OTP_GLOBAL_HOURLY_LIMIT`.
+
+### SMTP transport hardened
+
+- **`requireTLS: true`** on port 587. The connection opens in the clear and upgrades via STARTTLS; without this, nodemailer authenticates over the plaintext socket anyway if the upgrade is not offered, leaking the SMTP password to a downgrade attack or a misconfigured relay.
+- **`minVersion: "TLSv1.2"`** and an explicit `rejectUnauthorized: true`, stated so nobody later "fixes" a certificate error by disabling verification.
+- **Explicit timeouts** (5s connect, 5s greeting, 10s socket). Nodemailer defaults to 2 minutes and 10 minutes, which on serverless means a hung connection burns the entire request budget.
+- **No connection pool, deliberately.** Pooling is the standard advice and is wrong here: each Vercel container serves one request then freezes, so there is no long-lived process for a pool to amortise across.
+
+### Receipt email moved off the response path
+
+Checkout awaited Gmail before responding, adding a second or two of spinner to every order. It now uses Next's `after()`, so the response returns immediately and the mail sends before the function is frozen. A bare fire-and-forget promise would not work — serverless kills in-flight work once the response is sent.
+
+Failures are logged with the order number, since the only other signal is a customer who never received a receipt.
+
+### Invite email validated and escaped
+
+`admins` POST checked only `typeof email === "string"` — no format validation, unlike the checkout path — and `sendAdminInviteEmail` interpolated `invitedByEmail` raw into HTML. Now uses `asEmail`, and the invite and reset templates escape both the address and the URL.
+
+## Credential leakage sweep
+
+Scanned rather than assumed. Every check run against the live secret values from `.env.local`:
+
+| Check | Result |
+|---|---|
+| Secret values anywhere in git history | Clean — no `.env`/secret file ever committed |
+| Secret values in build output (`.next/`) | Clean — no value appears in any bundle |
+| `NEXT_PUBLIC_*` variables (these ship to the browser) | Clean — none defined or referenced |
+| `process.env` inside `"use client"` components | Clean — none |
+| MongoDB driver errors carrying the URI password | Clean — verified by forcing a connection failure with a known password and inspecting `message`, `stack` and all own properties |
+| Nodemailer errors carrying the SMTP password | Clean — verified the same way |
+| API error responses returning raw error objects | Clean — every catch returns a generic message |
+| `.gitignore` coverage | `.env*` ignored |
+
+The last two driver checks matter because `console.error(error)` appears throughout the codebase; had either driver embedded credentials in its error objects, every failed connection would have written them to the Vercel logs. Neither does.
+
+**One residual risk, outside the code:** `SMTP_PASS` is a Gmail app password, which grants send access to that mailbox to anyone holding it. It lives in `.env.local` and in Vercel's environment settings. Rotate it if it is ever pasted into a chat, a ticket, or a screenshot.
+
 ## Remaining work, in priority order
 
 1. **#11 — username case-shadowing.** Lowercase usernames on insert and migrate existing ones; login matches case-insensitively while the unique index does not.

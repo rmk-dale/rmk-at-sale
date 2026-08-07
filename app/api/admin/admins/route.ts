@@ -8,6 +8,7 @@ import {
 } from "@/lib/models/admin";
 import { generateOpaqueToken } from "@/lib/adminAuth";
 import { sendAdminInviteEmail } from "@/lib/email";
+import { asEmail, asString } from "@/lib/validation";
 import { recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
 
@@ -27,16 +28,30 @@ export async function POST(req: NextRequest) {
   if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    const { username, email, role } = await req.json();
+    const body: unknown = await req.json();
+    const raw =
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>)
+        : {};
 
-    if (
-      !username ||
-      !email ||
-      typeof username !== "string" ||
-      typeof email !== "string"
-    ) {
+    const username = asString(raw.username, 64);
+    // Format-validated, not just type-checked. This value ends up as a
+    // mail recipient and is interpolated into the invite template, so the
+    // same guard the checkout flow uses applies here — a "username" like
+    // `x@y.com\nBcc: ...` should never reach the mail layer.
+    const email = asEmail(raw.email);
+    const role = raw.role;
+
+    if (!username) {
       return NextResponse.json(
-        { error: "Username and email are required." },
+        { error: "A username is required." },
+        { status: 400 },
+      );
+    }
+
+    if (!email) {
+      return NextResponse.json(
+        { error: "A valid email address is required." },
         { status: 400 },
       );
     }
@@ -45,7 +60,7 @@ export async function POST(req: NextRequest) {
     const admins = await getAdminsCollection();
 
     const existing = await admins.findOne({
-      $or: [{ username }, { email: email.toLowerCase() }],
+      $or: [{ username }, { email }],
     });
     if (existing) {
       return NextResponse.json(
@@ -60,7 +75,7 @@ export async function POST(req: NextRequest) {
     const result = await admins.insertOne({
       _id: new ObjectId(),
       username,
-      email: email.toLowerCase(),
+      email,
       role: normalizedRole,
       status: "invited",
       twoFactorEnabled: false,
@@ -83,7 +98,7 @@ export async function POST(req: NextRequest) {
       targetId: result.insertedId.toString(),
       targetLabel: username,
       changes: [
-        { field: "email", from: null, to: email.toLowerCase() },
+        { field: "email", from: null, to: email },
         { field: "role", from: null, to: normalizedRole },
       ],
       ip: getClientIp(req),

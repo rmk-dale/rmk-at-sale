@@ -2,14 +2,49 @@ import nodemailer from "nodemailer";
 import path from "path";
 import { escapeHtml } from "@/lib/validation";
 
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
+
+/**
+ * SMTP transport.
+ *
+ * Three things here are load-bearing:
+ *
+ * **requireTLS.** On port 587 the connection opens in the clear and is
+ * upgraded with STARTTLS. Without `requireTLS`, nodemailer will carry on
+ * and authenticate over the plaintext socket if the server does not offer
+ * the upgrade — so a downgrade attack, or a misconfigured relay, leaks the
+ * SMTP password. Setting it makes nodemailer abort instead. Ignored when
+ * `secure` is true (port 465), where the socket is TLS from the start.
+ *
+ * **Timeouts.** Nodemailer defaults to a 2-minute connection timeout and a
+ * 10-minute socket timeout. This runs on serverless functions that are
+ * killed long before either, so the defaults mean a hung SMTP connection
+ * burns the whole request budget while the customer waits on a spinner.
+ * These are set to fail fast instead.
+ *
+ * **No connection pool.** Pooling is the usual advice and is wrong here:
+ * each Vercel container serves one request and is then frozen or
+ * recycled, so there is no long-lived process for a pool to amortise
+ * across. It would add complexity and reconnect churn for no gain.
+ */
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: process.env.SMTP_PORT === "465", // true for 465, false for other ports
+  port: SMTP_PORT,
+  secure: SMTP_PORT === 465,
+  requireTLS: SMTP_PORT !== 465,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  tls: {
+    // Default is already true; stated explicitly so nobody "fixes" a
+    // certificate error later by turning verification off.
+    rejectUnauthorized: true,
+    minVersion: "TLSv1.2",
+  },
+  connectionTimeout: 5_000,
+  greetingTimeout: 5_000,
+  socketTimeout: 10_000,
 });
 
 /**
@@ -124,8 +159,8 @@ export async function sendAdminInviteEmail(
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>You've been invited as an admin</h2>
-        <p><strong>${invitedByEmail}</strong> invited you to help manage rmk-at-sale.</p>
-        <p><a href="${inviteUrl}" style="color: #4f46e5;">Set up your account</a> to choose a password and enable two-factor authentication.</p>
+        <p><strong>${escapeHtml(invitedByEmail)}</strong> invited you to help manage rmk-at-sale.</p>
+        <p><a href="${escapeHtml(inviteUrl)}" style="color: #4f46e5;">Set up your account</a> to choose a password and enable two-factor authentication.</p>
         <p style="color: #71717a; font-size: 14px;">This link expires in 24 hours. If you weren't expecting this, you can ignore it.</p>
       </div>
     `,
@@ -149,7 +184,7 @@ export async function sendAdminPasswordResetEmail(
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
         <h2>Reset your admin password</h2>
-        <p><a href="${resetUrl}" style="color: #4f46e5;">Choose a new password</a></p>
+        <p><a href="${escapeHtml(resetUrl)}" style="color: #4f46e5;">Choose a new password</a></p>
         <p style="color: #71717a; font-size: 14px;">This link expires in 1 hour. If you didn't request this, you can ignore it.</p>
       </div>
     `,

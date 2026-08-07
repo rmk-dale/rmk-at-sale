@@ -56,13 +56,35 @@ export interface RateLimitResult {
  * Central table of limits. Kept in one place so the blast radius of a
  * tuning change is obvious and so no endpoint silently ships unprotected.
  *
- * The per-identifier limits are the ones that actually stop a targeted
- * brute force; the per-IP limits stop the cheap broad version of the same
- * attack. Both apply, and the tighter of the two wins.
+ * ---------------------------------------------------------------------
+ * Per-IP limits are deliberately loose. Read this before tightening them.
+ * ---------------------------------------------------------------------
+ *
+ * This is an internal storefront. Everyone using it sits in the same
+ * office behind the same corporate NAT, so from the server's side the
+ * entire company shares **one** IP address. A per-IP limit of 5 does not
+ * mean "five attempts per person" — it means the sixth colleague to shop
+ * that quarter-hour is refused, having done nothing wrong.
+ *
+ * These numbers were originally sized for a public storefront, where one
+ * IP is a fair proxy for one actor. That assumption died when ordering was
+ * restricted to company addresses, and the limits are re-scaled here to
+ * match: per-IP is now a coarse backstop against a flood, and the
+ * **per-account** limits below — which are unchanged and still tight — are
+ * what actually stop a targeted attack.
+ *
+ * Two things make the loose per-IP ceilings safe:
+ *   1. The domain allowlist means an outsider cannot obtain a code or a
+ *      session at all, so there is no anonymous attacker to throttle.
+ *   2. The real caps are enforced per account and per challenge — the
+ *      5-attempt cap on an OTP challenge lives in Mongo and is unaffected
+ *      by whatever IP the requests arrive from.
+ *
+ * If this ever becomes a public storefront, these must come back down.
  */
 export const RATE_LIMITS = {
   /** Sending a checkout code. Protects the SMTP account from being used as a relay. */
-  otpRequestPerIp: { limit: 5, windowMs: 15 * 60_000 },
+  otpRequestPerIp: { limit: 100, windowMs: 15 * 60_000 },
   otpRequestPerEmail: { limit: 3, windowMs: 15 * 60_000 },
 
   /**
@@ -79,11 +101,21 @@ export const RATE_LIMITS = {
    * containers to mean anything, which is exactly why it lives in Redis
    * and not in process memory.
    *
-   * Sized well above plausible real traffic for a store this size: if it
-   * ever trips, that is a signal worth investigating, not a limit worth
-   * quietly raising.
+   * **Sized against the mail provider, not against guesswork.** Mail goes
+   * out through Gmail, which caps a free account at roughly 500 recipients
+   * per day and Workspace at about 2,000. A ceiling of 500/hour — the
+   * original value here — sits above Gmail's entire daily allowance, so it
+   * could never trip before Gmail itself cut sending off, which defeats
+   * the point of having it. 100/hour leaves real headroom for an internal
+   * store while still catching abuse well before the provider does.
+   *
+   * Raise it via OTP_GLOBAL_HOURLY_LIMIT if you move to a provider with a
+   * higher quota — but keep it below whatever that provider allows.
    */
-  otpSendGlobal: { limit: 500, windowMs: 60 * 60_000 },
+  otpSendGlobal: {
+    limit: Number(process.env.OTP_GLOBAL_HOURLY_LIMIT ?? 100),
+    windowMs: 60 * 60_000,
+  },
 
   /**
    * Guessing a checkout code. The per-challenge attempt counter in
@@ -91,21 +123,21 @@ export const RATE_LIMITS = {
    * challenge is burned); this stops an attacker from cheaply cycling
    * through fresh challenges to reset that counter.
    */
-  otpVerifyPerIp: { limit: 15, windowMs: 15 * 60_000 },
+  otpVerifyPerIp: { limit: 300, windowMs: 15 * 60_000 },
 
   /** Admin password attempts. Complements the per-account DB lockout. */
-  adminLoginPerIp: { limit: 10, windowMs: 15 * 60_000 },
+  adminLoginPerIp: { limit: 60, windowMs: 15 * 60_000 },
   adminLoginPerAccount: { limit: 8, windowMs: 15 * 60_000 },
 
   /**
    * Admin 2FA. Deliberately tight: reaching this endpoint at all means the
    * password is already known, so it is the last barrier standing.
    */
-  admin2faPerIp: { limit: 10, windowMs: 15 * 60_000 },
+  admin2faPerIp: { limit: 60, windowMs: 15 * 60_000 },
   admin2faPerAccount: { limit: 6, windowMs: 15 * 60_000 },
 
   /** Password-reset mail. Stops mail-bombing a known admin address. */
-  adminForgotPerIp: { limit: 5, windowMs: 60 * 60_000 },
+  adminForgotPerIp: { limit: 40, windowMs: 60 * 60_000 },
   adminForgotPerEmail: { limit: 3, windowMs: 60 * 60_000 },
 
   /**
@@ -119,7 +151,7 @@ export const RATE_LIMITS = {
    * 6-digit TOTP code with no per-account counter of its own, which is the
    * same shape of gap that was fixed on login and verify-2fa.
    */
-  adminTokenEndpointPerIp: { limit: 10, windowMs: 15 * 60_000 },
+  adminTokenEndpointPerIp: { limit: 60, windowMs: 15 * 60_000 },
 
   /** Checkout submissions per session. Backstop against order spam. */
   checkoutPerSession: { limit: 20, windowMs: 60_000 },

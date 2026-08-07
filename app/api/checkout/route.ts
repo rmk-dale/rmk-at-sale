@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { cookies } from "next/headers";
 import { ObjectId } from "mongodb";
 import { sendReceiptEmail } from "@/lib/email";
@@ -310,27 +310,46 @@ export async function POST(req: NextRequest) {
     // storefront read reflects it instead of waiting out the TTL.
     invalidatePublicProductsCache();
 
-    // 7. Send Email Receipt — a delivery concern, not an inventory one, so a
-    // failure here doesn't roll back the stock decrement or the order.
-    try {
-      await sendReceiptEmail(
-        email,
-        totalAmount,
-        purchasedItems.map((item) => ({
-          name: item.description,
-          quantity: item.quantity,
-          price: item.price,
-          color: item.color,
-          size: item.size,
-        })),
-        orderNumber,
-      );
-    } catch (emailError) {
-      console.error(
-        "Order succeeded but receipt email failed to send:",
-        emailError,
-      );
-    }
+    // 7. Send the receipt after the response, not before it.
+    //
+    // The order is already committed by this point, so the receipt is a
+    // delivery concern and a failure must not roll anything back. It also
+    // has no business making the shopper wait: awaiting Gmail here added a
+    // second or two of spinner to every checkout, and a slow or hung SMTP
+    // connection would hold the function open until the platform killed it.
+    //
+    // A bare fire-and-forget promise would not work on serverless — the
+    // function is frozen once the response is returned, killing anything
+    // still in flight. `after` is Next's supported way to keep work alive
+    // past the response for exactly this case.
+    const receiptItems = purchasedItems.map((item) => ({
+      name: item.description,
+      quantity: item.quantity,
+      price: item.price,
+      color: item.color,
+      size: item.size,
+    }));
+    const receiptTotal = totalAmount;
+    const receiptOrderNumber = orderNumber;
+
+    after(async () => {
+      try {
+        await sendReceiptEmail(
+          email,
+          receiptTotal,
+          receiptItems,
+          receiptOrderNumber,
+        );
+      } catch (emailError) {
+        // The order exists and the customer has already been told so. This
+        // needs to be findable in the logs, because the only other signal
+        // is a customer who never got their receipt.
+        console.error(
+          `[checkout] Order ${receiptOrderNumber} committed but the receipt email failed:`,
+          emailError,
+        );
+      }
+    });
 
     // 8. Respond with Success
     return NextResponse.json({

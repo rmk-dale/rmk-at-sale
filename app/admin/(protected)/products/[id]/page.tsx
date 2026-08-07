@@ -8,7 +8,8 @@ import { ArrowLeft, ImageOff } from "lucide-react";
 import PhotoPicker from "@/components/admin/PhotoPicker";
 import ColorVariantEditor from "@/components/admin/ColorVariantEditor";
 import SizeTagInput from "@/components/admin/SizeTagInput";
-import type { ColorVariant } from "@/lib/models/product";
+import VariantMatrixEditor from "@/components/admin/VariantMatrixEditor";
+import type { ColorVariant, ProductVariant } from "@/lib/models/product";
 
 interface AdminProduct {
   _id: string;
@@ -21,6 +22,7 @@ interface AdminProduct {
   brand?: string;
   sizes?: string[];
   colors?: ColorVariant[];
+  variants?: ProductVariant[];
   featured?: boolean;
 }
 
@@ -40,6 +42,7 @@ export default function EditProductPage() {
   const [brand, setBrand] = useState("");
   const [sizes, setSizes] = useState<string[]>([]);
   const [colors, setColors] = useState<ColorVariant[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [featured, setFeatured] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -81,6 +84,7 @@ export default function EditProductPage() {
         setBrand(product.brand || "");
         setSizes(product.sizes || []);
         setColors(product.colors || []);
+        setVariants(product.variants || []);
         setFeatured(product.featured || false);
       } else {
         setNotFound(true);
@@ -134,6 +138,7 @@ export default function EditProductPage() {
           brand: brand.trim() || undefined,
           sizes,
           colors: validColors,
+          variants,
           featured,
         }),
       });
@@ -292,6 +297,15 @@ export default function EditProductPage() {
             defaultHoverImage={hoverImage}
           />
         </div>
+
+        <VariantMatrixEditor
+          colors={validColors}
+          sizes={sizes}
+          basePrice={Number(price) || 0}
+          baseStock={Number(stock) || 0}
+          variants={variants}
+          onChange={setVariants}
+        />
 
         <div>
           <label className="block text-sm font-medium text-zinc-600 mb-2">

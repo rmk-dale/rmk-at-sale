@@ -49,12 +49,21 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
     selectedColor?.hoverImage || product.hoverImage,
   ].filter(Boolean) as string[];
 
+  const activeVariant = product.variants?.find(
+    (v) =>
+      (v.color === selectedColor?.name || (!v.color && !selectedColor)) &&
+      (v.size === selectedSize || (!v.size && !selectedSize))
+  );
+
+  const displayPrice = activeVariant ? activeVariant.price : product.price;
+  const displayStock = activeVariant ? activeVariant.stock : product.stock;
+
   const handleAddToCart = () => {
     for (let i = 0; i < quantity; i++) {
       addItem({
         id: product.id,
         name: product.name,
-        price: product.price,
+        price: displayPrice,
         image: selectedColor?.image || product.image,
         quantity: 1,
         color: selectedColor?.name,
@@ -131,9 +140,9 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
 
           <div className="flex items-center gap-2 mb-6">
             <span className="text-2xl font-semibold text-zinc-900">
-              ₱{product.price.toFixed(2)}
+              ₱{displayPrice.toFixed(2)}
             </span>
-            {product.stock > 0 ? (
+            {displayStock > 0 ? (
               <span className="flex items-center gap-1.5 text-sm text-emerald-600 ml-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Available
@@ -248,11 +257,11 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
           </div>
 
           <button
-            disabled={product.stock <= 0}
+            disabled={displayStock <= 0}
             onClick={handleAddToCart}
             className="w-full bg-zinc-900 text-white py-3.5 rounded-xl font-medium hover:bg-zinc-700 transition-all transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-zinc-900 disabled:active:scale-100"
           >
-            {product.stock <= 0
+            {displayStock <= 0
               ? "Out of stock"
               : added
                 ? "Added to cart"

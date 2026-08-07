@@ -192,61 +192,96 @@ export async function POST(req: NextRequest) {
           }
 
           for (const { id, quantity, color, size } of items) {
-            const updated = await products.findOneAndUpdate(
-              { _id: id, stock: { $gte: quantity } },
-              { $inc: { stock: -quantity }, $set: { updatedAt: new Date() } },
-              { session: mongoSession, returnDocument: "after" },
+            const product = await products.findOne(
+              { _id: id },
+              { session: mongoSession },
             );
 
-            if (!updated) {
-              const existing = await products.findOne(
-                { _id: id },
-                { session: mongoSession },
-              );
-              if (!existing) {
-                throw new InsufficientStockError(id, 0);
-              }
-              throw new InsufficientStockError(
-                existing.description,
-                existing.stock,
-              );
+            if (!product) {
+              throw new InsufficientStockError(id, 0);
             }
 
-            // Variants are checked against what the product actually
-            // offers. Previously any string was accepted and stored, so an
-            // order could name a colour or size that does not exist and
-            // land on the packing list as if it did.
-            if (color && updated.colors?.length) {
-              const known = updated.colors.some((c) => c.name === color);
+            // Validations
+            if (color && product.colors?.length) {
+              const known = product.colors.some((c) => c.name === color);
               if (!known) {
                 throw new InvalidVariantError(
-                  `"${color}" is not an available colour for ${updated.description}.`,
+                  `"${color}" is not an available colour for ${product.description}.`,
                 );
               }
-            } else if (color && !updated.colors?.length) {
+            } else if (color && !product.colors?.length) {
               throw new InvalidVariantError(
-                `${updated.description} does not come in different colours.`,
+                `${product.description} does not come in different colours.`,
               );
             }
 
-            if (size && updated.sizes?.length) {
-              if (!updated.sizes.includes(size)) {
+            if (size && product.sizes?.length) {
+              if (!product.sizes.includes(size)) {
                 throw new InvalidVariantError(
-                  `"${size}" is not an available size for ${updated.description}.`,
+                  `"${size}" is not an available size for ${product.description}.`,
                 );
               }
-            } else if (size && !updated.sizes?.length) {
+            } else if (size && !product.sizes?.length) {
               throw new InvalidVariantError(
-                `${updated.description} does not come in different sizes.`,
+                `${product.description} does not come in different sizes.`,
               );
             }
 
-            totalAmount += updated.price * quantity;
+            // Variant pricing and stock logic
+            let activeVariantIndex = -1;
+            let activeVariant = null;
+
+            if (product.variants && product.variants.length > 0) {
+              activeVariantIndex = product.variants.findIndex(
+                (v) =>
+                  (v.color === color || (!v.color && !color)) &&
+                  (v.size === size || (!v.size && !size))
+              );
+              if (activeVariantIndex !== -1) {
+                activeVariant = product.variants[activeVariantIndex];
+              }
+            }
+
+            const itemPrice = activeVariant ? activeVariant.price : product.price;
+
+            if (activeVariant) {
+              if (activeVariant.stock < quantity) {
+                throw new InsufficientStockError(
+                  `${product.description} (${[color, size].filter(Boolean).join(" ")})`,
+                  activeVariant.stock
+                );
+              }
+              await products.updateOne(
+                { _id: id },
+                { 
+                  $inc: { [`variants.${activeVariantIndex}.stock`]: -quantity },
+                  $set: { updatedAt: new Date() }
+                },
+                { session: mongoSession }
+              );
+            } else {
+              if (product.stock < quantity) {
+                throw new InsufficientStockError(
+                  product.description,
+                  product.stock
+                );
+              }
+              await products.updateOne(
+                { _id: id },
+                { 
+                  $inc: { stock: -quantity },
+                  $set: { updatedAt: new Date() }
+                },
+                { session: mongoSession }
+              );
+            }
+
+            totalAmount += itemPrice * quantity;
             purchasedItems.push({
               itemCode: id,
-              description: updated.description,
+              description: product.description,
               quantity,
-              price: updated.price,
+              price: itemPrice,
               color,
               size,
             });

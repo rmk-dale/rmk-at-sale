@@ -42,6 +42,27 @@ function parseColors(input: unknown): ColorVariant[] | null {
   return colors.map((c, i) => ({ ...c, isDefault: i === defaultIndex }));
 }
 
+function parseVariants(input: unknown): import("@/lib/models/product").ProductVariant[] | null {
+  if (input === undefined) return [];
+  if (!Array.isArray(input)) return null;
+  const variants: import("@/lib/models/product").ProductVariant[] = [];
+  for (const entry of input) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const { color, size, price, stock } = entry as Record<string, unknown>;
+    
+    if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
+    if (typeof stock !== "number" || stock < 0 || !Number.isInteger(stock)) return null;
+
+    variants.push({
+      color: typeof color === "string" && color.trim() ? color.trim() : undefined,
+      size: typeof size === "string" && size.trim() ? size.trim() : undefined,
+      price,
+      stock,
+    });
+  }
+  return variants;
+}
+
 export async function GET() {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -67,6 +88,7 @@ export async function POST(req: NextRequest) {
       brand,
       sizes,
       colors,
+      variants,
       featured,
     } = await req.json();
 
@@ -129,6 +151,13 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    const parsedVariants = parseVariants(variants);
+    if (parsedVariants === null) {
+      return NextResponse.json(
+        { error: "Variants must have valid price and stock." },
+        { status: 400 },
+      );
+    }
 
     const products = await getProductsCollection();
     const existing = await products.findOne({ _id: itemCode });
@@ -151,6 +180,7 @@ export async function POST(req: NextRequest) {
       brand: brand ? brand.trim() : undefined,
       sizes: parsedSizes.length ? parsedSizes : undefined,
       colors: parsedColors.length ? parsedColors : undefined,
+      variants: parsedVariants.length ? parsedVariants : undefined,
       featured: Boolean(featured),
       createdAt: now,
       updatedAt: now,

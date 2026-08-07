@@ -17,6 +17,7 @@ export interface CardProduct {
   brand?: string;
   sizes?: string[];
   colors?: ColorVariant[];
+  variants?: import("@/lib/models/product").ProductVariant[];
   featured?: boolean;
 }
 
@@ -35,6 +36,25 @@ export default function ProductCard({
 
   const image = selectedColor?.image || product.image;
   const hoverImage = selectedColor?.hoverImage || product.hoverImage;
+
+  // Determine display price
+  let minPrice = product.price;
+  let maxPrice = product.price;
+  if (product.variants && product.variants.length > 0) {
+    minPrice = Math.min(...product.variants.map((v) => v.price));
+    maxPrice = Math.max(...product.variants.map((v) => v.price));
+  }
+
+  // Determine display stock for the selected color (across all sizes)
+  let displayStock = product.stock;
+  if (product.variants && product.variants.length > 0 && selectedColor) {
+    const colorVariants = product.variants.filter(
+      (v) => v.color === selectedColor.name
+    );
+    if (colorVariants.length > 0) {
+      displayStock = colorVariants.reduce((sum, v) => sum + v.stock, 0);
+    }
+  }
 
   return (
     <Link
@@ -86,7 +106,7 @@ export default function ProductCard({
             {product.name}
           </h2>
           <span className="text-zinc-900 font-semibold text-sm whitespace-nowrap">
-            ₱{product.price.toFixed(2)}
+            {minPrice < maxPrice ? "From " : ""}₱{minPrice.toFixed(2)}
           </span>
         </div>
 
@@ -123,7 +143,7 @@ export default function ProductCard({
         )}
 
         <button
-          disabled={product.stock <= 0}
+          disabled={displayStock <= 0}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -132,7 +152,7 @@ export default function ProductCard({
           className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-2.5 rounded-xl font-medium text-sm hover:bg-zinc-700 transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-zinc-900 disabled:active:scale-100"
         >
           <Plus className="w-4 h-4" />
-          {product.stock <= 0 ? "Out of stock" : "Add to cart"}
+          {displayStock <= 0 ? "Out of stock" : "Add to cart"}
         </button>
       </div>
     </Link>

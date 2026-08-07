@@ -9,6 +9,13 @@ export interface ColorVariant {
   isDefault?: boolean; // this color's photo is used as the product's main image/hoverImage
 }
 
+export interface ProductVariant {
+  color?: string; // Must match one of the colors, or undefined if product has no colors
+  size?: string;  // Must match one of the sizes, or undefined if product has no sizes
+  price: number;
+  stock: number;
+}
+
 export interface ProductDoc {
   _id: string; // Item Code, e.g. "AT88G01001"
   name?: string; // We make this optional for backward compatibility
@@ -20,6 +27,7 @@ export interface ProductDoc {
   brand?: string;
   sizes?: string[]; // e.g. ["55cm", "67cm", "78cm"]
   colors?: ColorVariant[];
+  variants?: ProductVariant[]; // Price and stock matrix
   featured?: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -37,6 +45,7 @@ export interface PublicProduct {
   brand?: string;
   sizes?: string[];
   colors?: ColorVariant[];
+  variants?: ProductVariant[];
   featured?: boolean;
 }
 
@@ -57,6 +66,7 @@ export function toPublicProduct(doc: ProductDoc): PublicProduct {
     brand: doc.brand,
     sizes: doc.sizes,
     colors: doc.colors,
+    variants: doc.variants,
     featured: doc.featured,
   };
 }

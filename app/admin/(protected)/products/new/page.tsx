@@ -8,7 +8,8 @@ import { ArrowLeft, ImageOff } from "lucide-react";
 import PhotoPicker from "@/components/admin/PhotoPicker";
 import ColorVariantEditor from "@/components/admin/ColorVariantEditor";
 import SizeTagInput from "@/components/admin/SizeTagInput";
-import type { ColorVariant } from "@/lib/models/product";
+import VariantMatrixEditor from "@/components/admin/VariantMatrixEditor";
+import type { ColorVariant, ProductVariant } from "@/lib/models/product";
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function NewProductPage() {
   const [brand, setBrand] = useState("");
   const [sizes, setSizes] = useState<string[]>([]);
   const [colors, setColors] = useState<ColorVariant[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [featured, setFeatured] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -76,6 +78,7 @@ export default function NewProductPage() {
           brand: brand.trim() || undefined,
           sizes,
           colors: validColors,
+          variants,
           featured,
         }),
       });
@@ -222,6 +225,15 @@ export default function NewProductPage() {
             defaultHoverImage={hoverImage}
           />
         </div>
+
+        <VariantMatrixEditor
+          colors={validColors}
+          sizes={sizes}
+          basePrice={Number(price) || 0}
+          baseStock={Number(stock) || 0}
+          variants={variants}
+          onChange={setVariants}
+        />
 
         <div>
           <label className="block text-sm font-medium text-zinc-600 mb-2">

@@ -221,9 +221,16 @@ export default function CartPage() {
                       {[item.color, item.size].filter(Boolean).join(" | ")}
                     </p>
                   )}
-                  <p className="text-muted font-medium text-sm">
-                    ₱{item.price.toFixed(2)}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {item.originalPrice !== undefined && item.originalPrice > item.price && (
+                      <p className="text-sm text-muted line-through tabular-nums">
+                        ₱{item.originalPrice.toFixed(2)}
+                      </p>
+                    )}
+                    <p className="text-muted font-medium text-sm tabular-nums">
+                      ₱{item.price.toFixed(2)}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-4 bg-background rounded-full px-4 py-2 border border-border">

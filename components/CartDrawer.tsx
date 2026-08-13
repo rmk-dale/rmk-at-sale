@@ -86,9 +86,16 @@ export default function CartDrawer() {
                         {[item.color, item.size].filter(Boolean).join(" | ")}
                       </p>
                     )}
-                    <p className="text-sm text-primary font-medium mt-1 tabular-nums">
-                      ₱{item.price.toFixed(2)}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {item.originalPrice !== undefined && item.originalPrice > item.price && (
+                        <p className="text-xs text-muted line-through tabular-nums">
+                          ₱{item.originalPrice.toFixed(2)}
+                        </p>
+                      )}
+                      <p className="text-sm text-primary font-medium tabular-nums">
+                        ₱{item.price.toFixed(2)}
+                      </p>
+                    </div>
 
                     <div className="flex items-center gap-3 mt-2 bg-background rounded-full px-3 py-1 border border-border w-fit">
                       <button

@@ -54,15 +54,17 @@ function parseVariants(input: unknown): import("@/lib/models/product").ProductVa
   const variants: import("@/lib/models/product").ProductVariant[] = [];
   for (const entry of input) {
     if (typeof entry !== "object" || entry === null) return null;
-    const { color, size, price, stock } = entry as Record<string, unknown>;
+    const { color, size, price, originalPrice, stock } = entry as Record<string, unknown>;
     
     if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
+    if (originalPrice !== undefined && (typeof originalPrice !== "number" || !Number.isFinite(originalPrice) || originalPrice < 0)) return null;
     if (typeof stock !== "number" || stock < 0 || !Number.isInteger(stock)) return null;
 
     variants.push({
       color: typeof color === "string" && color.trim() ? color.trim() : undefined,
       size: typeof size === "string" && size.trim() ? size.trim() : undefined,
       price,
+      originalPrice,
       stock,
     });
   }
@@ -99,6 +101,7 @@ export async function POST(req: NextRequest) {
       name,
       description,
       price,
+      originalPrice,
       stock,
       image,
       hoverImage,
@@ -125,6 +128,12 @@ export async function POST(req: NextRequest) {
     if (typeof price !== "number" || !Number.isFinite(price) || price < 0) {
       return NextResponse.json(
         { error: "Price must be a non-negative number." },
+        { status: 400 },
+      );
+    }
+    if (originalPrice !== undefined && (typeof originalPrice !== "number" || !Number.isFinite(originalPrice) || originalPrice < 0)) {
+      return NextResponse.json(
+        { error: "Original price must be a non-negative number." },
         { status: 400 },
       );
     }
@@ -180,6 +189,7 @@ export async function POST(req: NextRequest) {
       name,
       description,
       price,
+      originalPrice,
       stock,
       image,
       hoverImage: hoverImage || undefined,

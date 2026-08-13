@@ -13,6 +13,7 @@ export interface ProductVariant {
   color?: string; // Must match one of the colors, or undefined if product has no colors
   size?: string;  // Must match one of the sizes, or undefined if product has no sizes
   price: number;
+  originalPrice?: number;
   stock: number;
 }
 
@@ -21,6 +22,7 @@ export interface ProductDoc {
   name?: string; // We make this optional for backward compatibility
   description: string;
   price: number;
+  originalPrice?: number;
   stock: number;
   image: string; // path into public/items/, e.g. "/items/item1front.jpg"
   hoverImage?: string;
@@ -39,6 +41,7 @@ export interface PublicProduct {
   name: string;
   description: string;
   price: number;
+  originalPrice?: number;
   stock: number;
   image: string;
   hoverImage?: string;
@@ -60,6 +63,7 @@ export function toPublicProduct(doc: ProductDoc): PublicProduct {
     name: doc.name || doc.description,
     description: doc.description,
     price: doc.price,
+    originalPrice: doc.originalPrice,
     stock: doc.stock,
     image: doc.image,
     hoverImage: doc.hoverImage,

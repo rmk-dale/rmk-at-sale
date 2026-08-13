@@ -16,6 +16,7 @@ export default function NewProductPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const [originalPrice, setOriginalPrice] = useState("");
   const [stock, setStock] = useState("");
   const [image, setImage] = useState("");
   const [hoverImage, setHoverImage] = useState("");
@@ -74,6 +75,7 @@ export default function NewProductPage() {
           name: name.trim(),
           description: description.trim(),
           price: Number(computedPrice),
+          originalPrice: originalPrice ? Number(originalPrice) : undefined,
           stock: Number(computedStock),
           image: finalImage,
           hoverImage: finalHoverImage || undefined,
@@ -128,6 +130,20 @@ export default function NewProductPage() {
                 step="0.01"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
+                className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-600 mb-2">
+                Original price (optional)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={originalPrice}
+                onChange={(e) => setOriginalPrice(e.target.value)}
+                placeholder="0.00"
                 className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
               />
             </div>

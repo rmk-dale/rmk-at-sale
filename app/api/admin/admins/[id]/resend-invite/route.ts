@@ -61,7 +61,7 @@ export async function POST(
       targetId: target._id.toString(),
       targetLabel: target.username,
       changes: [
-        { field: "inviteToken", old: "[REDACTED]", new: "[REDACTED]" },
+        { field: "inviteToken", from: "[REDACTED]", to: "[REDACTED]" },
       ],
     });
 

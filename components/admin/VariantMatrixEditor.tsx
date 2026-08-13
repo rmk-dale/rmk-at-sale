@@ -65,8 +65,8 @@ export default function VariantMatrixEditor({
       return {
         color: comb.color,
         size: comb.size,
-        price: basePrice || 0,
-        stock: baseStock || 0,
+        price: 0,
+        stock: 0,
       };
     });
 

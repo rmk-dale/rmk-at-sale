@@ -28,6 +28,7 @@ export default function AdminsPage() {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"owner" | "staff">("staff");
   const [inviting, setInviting] = useState(false);
+  const [resending, setResending] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [actionError, setActionError] = useState("");
@@ -98,6 +99,27 @@ export default function AdminsPage() {
       return;
     }
     load();
+  };
+
+  const resendInvite = async (id: string, email: string) => {
+    setResending(id);
+    setActionError("");
+    setInviteSuccess("");
+    try {
+      const res = await fetch(`/api/admin/admins/${id}/resend-invite`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error || "Failed to resend invite");
+      } else {
+        setInviteSuccess(`Invite resent to ${email}.`);
+      }
+    } catch (err) {
+      setActionError("Something went wrong while resending the invite.");
+    } finally {
+      setResending(null);
+    }
   };
 
   if (forbidden) {
@@ -207,23 +229,34 @@ export default function AdminsPage() {
                     {a.twoFactorEnabled ? "Enabled" : "—"}
                   </td>
                   <td className="px-5 py-3 text-right">
-                    {a.status === "disabled" ? (
-                      <button
-                        onClick={() => updateAdmin(a.id, { status: "active" })}
-                        className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
-                      >
-                        Re-enable
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() =>
-                          updateAdmin(a.id, { status: "disabled" })
-                        }
-                        className="text-red-500 hover:text-red-600 text-sm font-medium"
-                      >
-                        Disable
-                      </button>
-                    )}
+                    <div className="flex gap-4 justify-end items-center">
+                      {a.status === "invited" && (
+                        <button
+                          onClick={() => resendInvite(a.id, a.email)}
+                          disabled={resending === a.id}
+                          className="text-amber-600 hover:text-amber-700 text-sm font-medium disabled:opacity-50"
+                        >
+                          {resending === a.id ? "Sending…" : "Resend"}
+                        </button>
+                      )}
+                      {a.status === "disabled" ? (
+                        <button
+                          onClick={() => updateAdmin(a.id, { status: "active" })}
+                          className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+                        >
+                          Re-enable
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            updateAdmin(a.id, { status: "disabled" })
+                          }
+                          className="text-red-500 hover:text-red-600 text-sm font-medium"
+                        >
+                          Disable
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

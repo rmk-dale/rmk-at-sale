@@ -17,6 +17,7 @@
     "migrate:orders": "node --experimental-strip-types scripts/migrate-orders.ts"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "bcryptjs": "^2.4.3",
     "lucide-react": "^1.28.0",
     "mongodb": "^6.21.0",

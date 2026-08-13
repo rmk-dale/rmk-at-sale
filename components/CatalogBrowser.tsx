@@ -136,6 +136,27 @@ export default function CatalogBrowser({
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-10">
+        {/* Banner Carousel */}
+        <div className="relative w-full overflow-hidden rounded-2xl mb-12 bg-zinc-100 group">
+          <div className="flex w-full transition-transform duration-500 ease-in-out">
+            <div className="min-w-full relative aspect-[1976/688]">
+              <img
+                src="/HOME%20IMAGE.png"
+                alt="American Tourister Sale"
+                className="absolute inset-0 w-full h-full object-cover"
+              />
+            </div>
+            {/* Additional carousel slides would go here */}
+          </div>
+          
+          {/* Carousel Indicators (Mockup for future slides) */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+            <button className="w-2.5 h-2.5 rounded-full bg-white transition-opacity opacity-100" aria-label="Go to slide 1"></button>
+            <button className="w-2.5 h-2.5 rounded-full bg-white transition-opacity opacity-50 hover:opacity-75" aria-label="Go to slide 2"></button>
+            <button className="w-2.5 h-2.5 rounded-full bg-white transition-opacity opacity-50 hover:opacity-75" aria-label="Go to slide 3"></button>
+          </div>
+        </div>
+
         <div className="mb-10 space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
             American Tourister - Sale

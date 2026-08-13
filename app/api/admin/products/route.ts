@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminGuard";
-import { getProductsCollection, ColorVariant } from "@/lib/models/product";
+import {
+  getAdminProducts,
+  getProductsCollection,
+  ColorVariant,
+} from "@/lib/models/product";
 import { invalidateProductCaches } from "@/lib/revalidate";
+import { NO_STORE_CACHE_HEADERS } from "@/lib/httpCache";
 import { recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
 
@@ -63,13 +68,25 @@ function parseVariants(input: unknown): import("@/lib/models/product").ProductVa
   return variants;
 }
 
+/**
+ * The inventory screen reads `getAdminProducts` directly as a Server
+ * Component and no longer calls this. It stays for external/API use and
+ * shares the same cache, so it can't drift from what the screen shows.
+ *
+ * `no-store` duplicates the blanket rule in next.config.ts on purpose:
+ * the config is a backstop for routes that forget, not a substitute for
+ * a route declaring its own contract.
+ */
 export async function GET() {
   const admin = await requireAdmin();
-  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!admin)
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403, headers: NO_STORE_CACHE_HEADERS },
+    );
 
-  const products = await getProductsCollection();
-  const all = await products.find().sort({ _id: 1 }).toArray();
-  return NextResponse.json(all);
+  const all = await getAdminProducts();
+  return NextResponse.json(all, { headers: NO_STORE_CACHE_HEADERS });
 }
 
 export async function POST(req: NextRequest) {

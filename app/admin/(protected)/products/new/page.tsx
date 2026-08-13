@@ -88,6 +88,11 @@ export default function NewProductPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to add item");
+      // The inventory list is server-rendered, so the new item only shows
+      // up if the client router drops whatever it already holds for
+      // /admin. `refresh` before `push` so the navigation lands on freshly
+      // rendered HTML instead of a cached payload that predates this save.
+      router.refresh();
       router.push("/admin");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

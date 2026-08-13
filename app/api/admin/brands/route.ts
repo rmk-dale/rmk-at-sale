@@ -1,25 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminGuard";
-import { getBrandsCollection, toPublicBrand } from "@/lib/models/brand";
+import { getAdminBrands, getBrandsCollection } from "@/lib/models/brand";
 import { invalidateBrandCaches } from "@/lib/revalidate";
+import { NO_STORE_CACHE_HEADERS } from "@/lib/httpCache";
 import { ObjectId } from "mongodb";
 import { escapeRegex } from "@/lib/validation";
 import { recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
 
+/**
+ * Still here after the brands screen moved to server rendering, because
+ * the product forms populate their brand dropdown from it. Serving it off
+ * `getAdminBrands` means opening the new/edit product form is a cache hit
+ * rather than another Atlas query.
+ *
+ * `no-store` is set explicitly even though next.config.ts already blankets
+ * `/api/admin/*` with it — the config is the backstop, and a route that
+ * states its own caching contract doesn't silently depend on it.
+ */
 export async function GET() {
   const admin = await requireAdmin();
-  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!admin)
+    return NextResponse.json(
+      { error: "Forbidden" },
+      { status: 403, headers: NO_STORE_CACHE_HEADERS },
+    );
 
   try {
-    const brands = await getBrandsCollection();
-    const allBrands = await brands.find().sort({ createdAt: -1 }).toArray();
-    return NextResponse.json(allBrands.map(toPublicBrand));
+    const brands = await getAdminBrands();
+    return NextResponse.json(brands, { headers: NO_STORE_CACHE_HEADERS });
   } catch (error) {
     console.error("Error fetching brands:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500 }
+      { status: 500, headers: NO_STORE_CACHE_HEADERS },
     );
   }
 }

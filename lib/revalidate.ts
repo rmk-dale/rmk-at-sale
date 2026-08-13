@@ -8,7 +8,11 @@ import { invalidatePublicBrandsCache } from "@/lib/models/brand";
  * There are now three, and a write has to clear all of them or an admin
  * edit appears to do nothing:
  *
- *   1. The in-memory `TTLCache` in the model modules (per container).
+ *   1. The in-memory `TTLCache`s in the model modules (per container) —
+ *      note there are two per collection now, one for the storefront's
+ *      public shape and one for the admin screens' raw documents. The
+ *      `invalidatePublic*` functions clear both, so nothing here needs to
+ *      know about the split.
  *   2. Next's rendered-page cache — the storefront pages are ISR, so the
  *      HTML is stored and reused independently of the data cache above.
  *   3. The CDN, which honours the `s-maxage` on those pages.

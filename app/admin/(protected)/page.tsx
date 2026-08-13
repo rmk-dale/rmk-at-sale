@@ -1,36 +1,29 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Plus, ShoppingBag } from "lucide-react";
+import { getAdminProducts } from "@/lib/models/product";
 
-interface AdminProduct {
-  _id: string;
-  name?: string;
-  description: string;
-  price: number;
-  stock: number;
-  image: string;
-  hoverImage?: string;
-  featured?: boolean;
-}
-
-export default function AdminInventoryPage() {
-  const [products, setProducts] = useState<AdminProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = () => {
-    setLoading(true);
-    fetch("/api/admin/products")
-      .then((res) => res.json())
-      .then((data) => {
-        setProducts(Array.isArray(data) ? data : []);
-        setLoading(false);
-      });
-  };
-
-  useEffect(load, []);
+/**
+ * Inventory list — a Server Component on purpose.
+ *
+ * This screen displays and never mutates, so nothing here needs to run in
+ * the browser. Reading Mongo directly instead of fetching
+ * `/api/admin/products` from a `useEffect` removes a whole HTTP request
+ * per visit, and with it the `requireAdmin` lookup that request would have
+ * performed — three Atlas round trips per navigation become two, which is
+ * the difference that matters on a free-tier cluster.
+ *
+ * It also removes the "Loading inventory…" state entirely: the table is in
+ * the first HTML response rather than appearing a round trip later.
+ *
+ * The protected layout has already run `requireAdmin` and redirected an
+ * unauthenticated visitor, and `requireAdmin` is memoised per request, so
+ * this page inherits that guard without paying for a second lookup. The
+ * read itself is guarded by that same layout — this file must stay inside
+ * `(protected)` for that to hold.
+ */
+export default async function AdminInventoryPage() {
+  const products = await getAdminProducts();
 
   return (
     <div>
@@ -45,9 +38,7 @@ export default function AdminInventoryPage() {
         </Link>
       </div>
 
-      {loading ? (
-        <p className="text-zinc-500 text-sm">Loading inventory…</p>
-      ) : products.length === 0 ? (
+      {products.length === 0 ? (
         <div className="text-center py-24 bg-surface rounded-2xl border border-border">
           <p className="text-zinc-500 mb-6">No products yet.</p>
           <Link

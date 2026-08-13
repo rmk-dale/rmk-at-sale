@@ -23,12 +23,20 @@ if (!uri) {
 // against that cap. serverSelectionTimeoutMS/socketTimeoutMS make slow
 // queries fail fast instead of hanging into (and past) the function's own
 // execution timeout while holding a pool slot.
+// Command monitoring is off unless MONGO_DEBUG_COMMANDS=1, because the
+// driver emits an event per command and that is not free. Turning it on
+// lets a script count exactly how many operations a code path sends to
+// Atlas — which is the only honest way to check whether a cache is doing
+// anything. See scripts/check-admin-cache.ts.
+const monitorCommands = process.env.MONGO_DEBUG_COMMANDS === "1";
+
 const clientOptions = {
   maxPoolSize: 5,
   minPoolSize: 0,
   maxIdleTimeMS: 10_000,
   serverSelectionTimeoutMS: 5_000,
   socketTimeoutMS: 20_000,
+  monitorCommands,
 };
 
 // In development, Next.js hot-reloads modules on every save, which would

@@ -148,6 +148,9 @@ export default function EditProductPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save changes");
+      // See the note in products/new: the list is server-rendered now, so
+      // the edit is invisible unless the router cache is cleared first.
+      router.refresh();
       router.push("/admin");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

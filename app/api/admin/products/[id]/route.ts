@@ -50,7 +50,7 @@ function parseVariants(input: unknown): import("@/lib/models/product").ProductVa
     const { color, size, price, originalPrice, stock } = entry as Record<string, unknown>;
     
     if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
-    if (originalPrice !== undefined && (typeof originalPrice !== "number" || !Number.isFinite(originalPrice) || originalPrice < 0)) return null;
+    if (originalPrice !== undefined && originalPrice !== null && (typeof originalPrice !== "number" || !Number.isFinite(originalPrice) || originalPrice < 0)) return null;
     if (typeof stock !== "number" || stock < 0 || !Number.isInteger(stock)) return null;
 
     variants.push({
@@ -152,7 +152,7 @@ export async function PATCH(
       }
       update.price = price;
     }
-    if (originalPrice !== undefined) {
+    if (originalPrice !== undefined && originalPrice !== null) {
       if (typeof originalPrice !== "number" || !Number.isFinite(originalPrice) || originalPrice < 0) {
         return NextResponse.json(
           { error: "Original price must be a non-negative number." },

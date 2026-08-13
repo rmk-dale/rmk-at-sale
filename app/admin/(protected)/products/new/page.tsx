@@ -52,6 +52,8 @@ export default function NewProductPage() {
   const hasVariants = validColors.length > 0 || sizes.length > 0;
   const computedPrice = hasVariants && variants.length > 0 ? Math.min(...variants.map((v) => v.price)) : price;
   const computedStock = hasVariants && variants.length > 0 ? variants.reduce((s, v) => s + v.stock, 0) : stock;
+  const variantOriginalPrices = variants.map((v) => v.originalPrice).filter((p): p is number => typeof p === 'number');
+  const computedOriginalPrice = hasVariants && variantOriginalPrices.length > 0 ? Math.max(...variantOriginalPrices) : (originalPrice ? Number(originalPrice) : undefined);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +77,7 @@ export default function NewProductPage() {
           name: name.trim(),
           description: description.trim(),
           price: Number(computedPrice),
-          originalPrice: originalPrice ? Number(originalPrice) : undefined,
+          originalPrice: computedOriginalPrice,
           stock: Number(computedStock),
           image: finalImage,
           hoverImage: finalHoverImage || undefined,
@@ -119,34 +121,36 @@ export default function NewProductPage() {
       >
         <div className="grid sm:grid-cols-2 gap-4">
           {!hasVariants && (
-            <div>
-              <label className="block text-sm font-medium text-zinc-600 mb-2">
-                Regular price
-              </label>
-              <input
-                required
-                type="number"
-                min="0"
-                step="0.01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-600 mb-2">
-                Original price (optional)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={originalPrice}
-                onChange={(e) => setOriginalPrice(e.target.value)}
-                placeholder="0.00"
-                className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium text-zinc-600 mb-2">
+                  Discounted price
+                </label>
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-600 mb-2">
+                  Original price (optional)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={originalPrice}
+                  onChange={(e) => setOriginalPrice(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+                />
+              </div>
+            </>
           )}
         </div>
 

@@ -52,6 +52,8 @@ export default function NewProductPage() {
   const hasVariants = validColors.length > 0 || sizes.length > 0;
   const computedPrice = hasVariants && variants.length > 0 ? Math.min(...variants.map((v) => v.price)) : price;
   const computedStock = hasVariants && variants.length > 0 ? variants.reduce((s, v) => s + v.stock, 0) : stock;
+  const variantOriginalPrices = variants.map((v) => v.originalPrice).filter((p): p is number => typeof p === 'number');
+  const computedOriginalPrice = hasVariants && variantOriginalPrices.length > 0 ? Math.max(...variantOriginalPrices) : (originalPrice ? Number(originalPrice) : undefined);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +77,7 @@ export default function NewProductPage() {
           name: name.trim(),
           description: description.trim(),
           price: Number(computedPrice),
-          originalPrice: originalPrice ? Number(originalPrice) : undefined,
+          originalPrice: computedOriginalPrice,
           stock: Number(computedStock),
           image: finalImage,
           hoverImage: finalHoverImage || undefined,

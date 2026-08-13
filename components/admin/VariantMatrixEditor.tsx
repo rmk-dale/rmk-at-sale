@@ -102,9 +102,9 @@ export default function VariantMatrixEditor({
         <p className="text-xs text-zinc-500">Overrides the base price and stock above.</p>
       </div>
       <div className="grid grid-cols-12 gap-4 px-4 py-2 border-b border-border bg-white text-xs font-semibold text-zinc-600 uppercase tracking-wider">
-        <div className="col-span-5">Variant</div>
-        <div className="col-span-3 text-right">Orig. Price (₱)</div>
-        <div className="col-span-2 text-right">Price (₱)</div>
+        <div className="col-span-4">Variant</div>
+        <div className="col-span-3 text-right">Original Price (₱)</div>
+        <div className="col-span-3 text-right">Discounted Price (₱)</div>
         <div className="col-span-2 text-right">Stock</div>
       </div>
       <div className="divide-y divide-border bg-white">
@@ -118,7 +118,7 @@ export default function VariantMatrixEditor({
               key={`${variant.color || "none"}-${variant.size || "none"}`}
               className="grid grid-cols-12 gap-4 px-4 py-3 items-center"
             >
-              <div className="col-span-5 text-sm font-medium text-zinc-900">
+              <div className="col-span-4 text-sm font-medium text-zinc-900">
                 {variantName}
               </div>
               <div className="col-span-3">
@@ -132,7 +132,7 @@ export default function VariantMatrixEditor({
                   className="w-full text-right bg-zinc-50 border border-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
                 />
               </div>
-              <div className="col-span-2">
+              <div className="col-span-3">
                 <input
                   type="number"
                   min="0"

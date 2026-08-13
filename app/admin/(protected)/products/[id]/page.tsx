@@ -194,7 +194,7 @@ export default function EditProductPage() {
             <>
               <div>
                 <label className="block text-sm font-medium text-zinc-600 mb-2">
-                  Regular price
+                  Discounted price
                 </label>
                 <input
                   required

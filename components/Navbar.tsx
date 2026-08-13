@@ -16,7 +16,14 @@ export default function Navbar() {
   }, []);
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 glass">
+    /*
+      Solid white, not the old translucent `.glass`. Two reasons: the page
+      background is now warm, so an 80%-opaque white bar picked up an
+      orange cast and read as off-white rather than white; and dropping the
+      rule also drops `backdrop-blur`, which was the most expensive thing
+      repainting on every scroll frame on mid-range Android.
+    */
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-border">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center group">
           <Image
@@ -31,12 +38,12 @@ export default function Navbar() {
 
         <button
           onClick={toggleCart}
-          className="relative p-2 rounded-full hover:bg-zinc-100 transition-colors group flex items-center justify-center"
+          className="relative p-2 rounded-full hover:bg-background transition-colors group flex items-center justify-center"
           aria-label="Open cart"
         >
-          <ShoppingCart className="w-5 h-5 text-zinc-700 group-hover:text-zinc-900 transition-colors" />
+          <ShoppingCart className="w-5 h-5 text-muted group-hover:text-foreground transition-colors" />
           {mounted && getTotalItems > 0 && (
-            <span className="absolute -top-1 -right-1 bg-zinc-900 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full animate-in zoom-in">
+            <span className="absolute -top-1 -right-1 bg-primary text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full animate-in zoom-in">
               {getTotalItems}
             </span>
           )}

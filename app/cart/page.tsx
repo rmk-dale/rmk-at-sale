@@ -102,30 +102,30 @@ export default function CartPage() {
       <div className="max-w-2xl mx-auto px-6 py-24 text-center">
         <div className="bg-surface border border-border p-12 rounded-2xl animate-in zoom-in slide-in-from-bottom-8 duration-500">
           <CheckCircle2 className="w-16 h-16 text-emerald-500 mx-auto mb-6" />
-          <h1 className="text-3xl font-semibold mb-4 text-zinc-900">
+          <h1 className="text-3xl font-semibold mb-4 text-foreground">
             Order confirmed
           </h1>
-          <p className="text-zinc-500 text-lg mb-6">
+          <p className="text-muted text-lg mb-6">
             Your receipt has been sent to{" "}
-            <span className="text-zinc-900 font-medium">{email}</span>. Thank
+            <span className="text-foreground font-medium">{email}</span>. Thank
             you for your purchase.
           </p>
           {orderNumber && (
-            <div className="mb-8 inline-block px-5 py-3 rounded-xl bg-zinc-100 border border-border">
-              <p className="text-xs uppercase tracking-wide text-zinc-500 mb-1">
+            <div className="mb-8 inline-block px-5 py-3 rounded-xl bg-background border border-border">
+              <p className="text-xs uppercase tracking-wide text-muted mb-1">
                 Order reference
               </p>
-              <p className="font-mono text-lg font-semibold text-zinc-900">
+              <p className="font-mono text-lg font-semibold text-foreground">
                 {orderNumber}
               </p>
-              <p className="text-xs text-zinc-500 mt-1">
+              <p className="text-xs text-muted mt-1">
                 Quote this if you contact us about your order.
               </p>
             </div>
           )}
           <Link
             href="/"
-            className="inline-flex bg-zinc-900 text-white px-8 py-3 rounded-xl font-medium hover:bg-zinc-700 transition-colors"
+            className="inline-flex bg-primary text-white px-8 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
           >
             Continue shopping
           </Link>
@@ -146,14 +146,14 @@ export default function CartPage() {
           <div className="relative bg-surface rounded-2xl p-8 max-w-lg w-full max-h-[80vh] overflow-y-auto animate-in zoom-in-95 duration-200 shadow-2xl">
             <button
               onClick={() => setModalContent(null)}
-              className="absolute top-4 right-4 p-2 rounded-full hover:bg-zinc-100 transition-colors"
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-background transition-colors"
             >
-              <X className="w-5 h-5 text-zinc-500" />
+              <X className="w-5 h-5 text-muted" />
             </button>
-            <h2 className="text-xl font-semibold mb-4 text-zinc-900">
+            <h2 className="text-xl font-semibold mb-4 text-foreground">
               {modalContent === "TERMS" ? "Terms and Conditions" : "Data Privacy Policy"}
             </h2>
-            <div className="space-y-4 text-sm text-zinc-600">
+            <div className="space-y-4 text-sm text-muted">
               {modalContent === "TERMS" ? (
                 <>
                   <p>Placeholder for Terms and Conditions...</p>
@@ -169,7 +169,7 @@ export default function CartPage() {
             <div className="mt-8">
               <button
                 onClick={() => setModalContent(null)}
-                className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium hover:bg-zinc-700 transition-colors"
+                className="w-full bg-primary text-white py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
               >
                 Close
               </button>
@@ -178,14 +178,14 @@ export default function CartPage() {
         </div>
       )}
 
-      <h1 className="text-3xl font-semibold mb-10 text-zinc-900">Your cart</h1>
+      <h1 className="text-3xl font-semibold mb-10 text-foreground">Your cart</h1>
 
       {items.length === 0 ? (
         <div className="text-center py-24 bg-surface rounded-2xl border border-border">
-          <p className="text-zinc-500 text-lg mb-6">Your cart is empty.</p>
+          <p className="text-muted text-lg mb-6">Your cart is empty.</p>
           <Link
             href="/"
-            className="inline-flex bg-zinc-900 text-white px-6 py-3 rounded-xl font-medium hover:bg-zinc-700 transition-colors"
+            className="inline-flex bg-primary text-white px-6 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
           >
             Start shopping
           </Link>
@@ -199,7 +199,7 @@ export default function CartPage() {
                 key={item.cartItemId || item.id}
                 className="flex flex-col sm:flex-row items-center gap-6 bg-surface p-5 rounded-2xl border border-border relative"
               >
-                <div className="w-20 h-20 bg-zinc-50 rounded-xl flex-shrink-0 border border-border relative overflow-hidden flex items-center justify-center">
+                <div className="w-20 h-20 bg-background rounded-xl flex-shrink-0 border border-border relative overflow-hidden flex items-center justify-center">
                   {item.image ? (
                     <Image
                       src={item.image}
@@ -209,36 +209,36 @@ export default function CartPage() {
                       className="object-cover"
                     />
                   ) : (
-                    <ShoppingBag className="w-8 h-8 text-zinc-300" />
+                    <ShoppingBag className="w-8 h-8 text-border" />
                   )}
                 </div>
                 <div className="flex-grow">
-                  <h3 className="text-base font-medium text-zinc-900 mb-1">
+                  <h3 className="text-base font-medium text-foreground mb-1">
                     {item.name}
                   </h3>
                   {(item.color || item.size) && (
-                    <p className="text-sm text-zinc-500 mb-1">
+                    <p className="text-sm text-muted mb-1">
                       {[item.color, item.size].filter(Boolean).join(" | ")}
                     </p>
                   )}
-                  <p className="text-zinc-500 font-medium text-sm">
+                  <p className="text-muted font-medium text-sm">
                     ₱{item.price.toFixed(2)}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-4 bg-zinc-50 rounded-full px-4 py-2 border border-border">
+                <div className="flex items-center gap-4 bg-background rounded-full px-4 py-2 border border-border">
                   <button
                     onClick={() => updateQuantity(item.cartItemId!, item.quantity - 1)}
-                    className="p-1 text-zinc-600 hover:text-zinc-900 transition-colors"
+                    className="p-1 text-muted hover:text-primary transition-colors"
                   >
                     <Minus className="w-4 h-4" />
                   </button>
-                  <span className="w-4 text-center font-medium text-zinc-900">
+                  <span className="w-4 text-center font-medium text-foreground">
                     {item.quantity}
                   </span>
                   <button
                     onClick={() => updateQuantity(item.cartItemId!, item.quantity + 1)}
-                    className="p-1 text-zinc-600 hover:text-zinc-900 transition-colors"
+                    className="p-1 text-muted hover:text-primary transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -246,7 +246,7 @@ export default function CartPage() {
 
                 <button
                   onClick={() => removeItem(item.cartItemId!)}
-                  className="p-3 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                  className="p-3 text-muted hover:text-primary hover:bg-primary/5 rounded-full transition-all"
                 >
                   <Trash2 className="w-5 h-5" />
                 </button>
@@ -257,13 +257,13 @@ export default function CartPage() {
           {/* Checkout Panel */}
           <div className="lg:col-span-1">
             <div className="bg-surface border border-border rounded-2xl p-8 sticky top-24">
-              <h2 className="text-xl font-semibold mb-6 text-zinc-900">
+              <h2 className="text-xl font-semibold mb-6 text-foreground">
                 Order summary
               </h2>
 
               <div className="flex justify-between items-center mb-6">
-                <span className="text-zinc-500">Total</span>
-                <span className="text-zinc-900 font-semibold text-2xl">
+                <span className="text-muted">Total</span>
+                <span className="text-foreground font-semibold text-2xl">
                   ₱{getTotal().toFixed(2)}
                 </span>
               </div>
@@ -273,7 +273,7 @@ export default function CartPage() {
               {step === "CART" && (
                 <button
                   onClick={() => setStep("EMAIL")}
-                  className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3.5 rounded-xl font-medium hover:bg-zinc-700 transition-all transform active:scale-95"
+                  className="w-full flex items-center justify-center gap-2 bg-primary text-white py-3.5 rounded-xl font-medium hover:bg-primary-hover transition-all transform active:scale-95"
                 >
                   Secure checkout
                   <ArrowRight className="w-4 h-4" />
@@ -286,7 +286,7 @@ export default function CartPage() {
                   className="space-y-4 animate-in slide-in-from-right-4 duration-300"
                 >
                   <div>
-                    <label className="block text-sm font-medium text-zinc-600 mb-2">
+                    <label className="block text-sm font-medium text-muted mb-2">
                       Work email address
                     </label>
                     <input
@@ -294,14 +294,14 @@ export default function CartPage() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-white border border-border rounded-xl px-4 py-3 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                      className="w-full bg-white border border-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                       placeholder="you@rgoc.com.ph"
                     />
                     {/* Stated up front so an employee using a personal
                         address finds out here rather than after submitting.
                         The server is still the authority — see
                         lib/orderPolicy.ts. */}
-                    <p className="mt-2 text-xs text-zinc-500">
+                    <p className="mt-2 text-xs text-muted">
                       Ordering is limited to company email addresses.
                     </p>
                   </div>
@@ -313,9 +313,9 @@ export default function CartPage() {
                         required
                         checked={acceptedTerms}
                         onChange={(e) => setAcceptedTerms(e.target.checked)}
-                        className="mt-1 rounded border-border text-zinc-900 focus:ring-zinc-900"
+                        className="mt-1 rounded border-border text-foreground focus:ring-primary"
                       />
-                      <span className="text-sm text-zinc-600 leading-relaxed">
+                      <span className="text-sm text-muted leading-relaxed">
                         I agree to the{" "}
                         <button
                           type="button"
@@ -323,7 +323,7 @@ export default function CartPage() {
                             e.preventDefault();
                             setModalContent("TERMS");
                           }}
-                          className="text-zinc-900 underline hover:text-zinc-700 font-medium"
+                          className="text-foreground underline hover:text-primary-hover font-medium"
                         >
                           Terms and Conditions
                         </button>.
@@ -335,9 +335,9 @@ export default function CartPage() {
                         required
                         checked={acceptedPrivacy}
                         onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-                        className="mt-1 rounded border-border text-zinc-900 focus:ring-zinc-900 flex-shrink-0"
+                        className="mt-1 rounded border-border text-foreground focus:ring-primary flex-shrink-0"
                       />
-                      <span className="text-sm text-zinc-600 leading-relaxed">
+                      <span className="text-sm text-muted leading-relaxed">
                         I accept the{" "}
                         <button
                           type="button"
@@ -345,7 +345,7 @@ export default function CartPage() {
                             e.preventDefault();
                             setModalContent("PRIVACY");
                           }}
-                          className="text-zinc-900 underline hover:text-zinc-700 font-medium"
+                          className="text-foreground underline hover:text-primary-hover font-medium"
                         >
                           Data Privacy Policy
                         </button>. We only collect your email address for tracking orders. Someone from our team will contact you to finalize and confirm the sale.
@@ -357,7 +357,7 @@ export default function CartPage() {
                   <button
                     disabled={loading || !acceptedTerms || !acceptedPrivacy}
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3.5 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors mt-2"
+                    className="w-full flex items-center justify-center gap-2 bg-primary text-white py-3.5 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-primary-hover transition-colors mt-2"
                   >
                     {loading ? "Sending code..." : "Send checkout code"}
                   </button>
@@ -370,7 +370,7 @@ export default function CartPage() {
                   className="space-y-4 animate-in slide-in-from-right-4 duration-300"
                 >
                   <div>
-                    <label className="block text-sm font-medium text-zinc-600 mb-2">
+                    <label className="block text-sm font-medium text-muted mb-2">
                       6-digit code sent to {email}
                     </label>
                     <input
@@ -379,7 +379,7 @@ export default function CartPage() {
                       maxLength={6}
                       value={otp}
                       onChange={(e) => setOtp(e.target.value)}
-                      className="w-full bg-white border border-border rounded-xl px-4 py-3 text-zinc-900 tracking-widest font-mono text-center text-xl focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:border-transparent transition-all"
+                      className="w-full bg-white border border-border rounded-xl px-4 py-3 text-foreground tracking-widest font-mono text-center text-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                       placeholder="000000"
                     />
                   </div>
@@ -387,7 +387,7 @@ export default function CartPage() {
                   <button
                     disabled={loading}
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-3.5 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-zinc-700 transition-colors"
+                    className="w-full flex items-center justify-center gap-2 bg-primary text-white py-3.5 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-primary-hover transition-colors"
                   >
                     {loading ? "Verifying..." : "Verify & pay securely"}
                     {!loading && <Lock className="w-4 h-4" />}

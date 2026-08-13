@@ -61,9 +61,19 @@ export default function ProductCard({
       href={`/product/${product.id}`}
       className="group flex flex-col min-h-[420px] bg-surface rounded-2xl border border-border overflow-hidden card-hover"
     >
-      <div className="aspect-[3/4] w-full relative bg-zinc-50 flex items-center justify-center overflow-hidden">
+      <div className="aspect-[3/4] w-full relative bg-background flex items-center justify-center overflow-hidden">
+        {/*
+          The poster's ribbon, reused as a real component — notched on the
+          trailing edge so it butts flush to the image's left edge rather
+          than floating as another rounded pill.
+
+          It stays "Featured" rather than "Bundle": the flag is driven by
+          `product.featured`, and a featured item is not necessarily part of
+          a bundle. Relabelling it would make the badge say something the
+          data does not.
+        */}
         {product.featured && (
-          <div className="absolute top-3 left-3 z-10 bg-white/90 backdrop-blur text-zinc-900 text-[10px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded-md shadow-sm">
+          <div className="ribbon-tag absolute top-3 left-0 z-10 bg-beacon text-foreground text-[10px] font-extrabold uppercase tracking-wider pl-2.5 pr-4 py-1.5">
             Featured
           </div>
         )}
@@ -91,21 +101,21 @@ export default function ProductCard({
             )}
           </>
         ) : (
-          <ShoppingBag className="w-14 h-14 text-zinc-300 group-hover:scale-105 group-hover:text-zinc-400 transition-all duration-500" />
+          <ShoppingBag className="w-14 h-14 text-border group-hover:scale-105 group-hover:text-muted transition-all duration-500" />
         )}
       </div>
 
       <div className="p-5 flex flex-col flex-grow">
         {product.brand && (
-          <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wide mb-1">
+          <span className="text-[11px] font-medium text-muted uppercase tracking-wide mb-1">
             {product.brand}
           </span>
         )}
         <div className="flex justify-between items-start gap-3 mb-2">
-          <h2 className="text-base font-medium text-zinc-900 leading-tight">
+          <h2 className="text-base font-medium text-foreground leading-tight">
             {product.name}
           </h2>
-          <span className="text-zinc-900 font-semibold text-sm whitespace-nowrap">
+          <span className="text-primary font-semibold text-sm whitespace-nowrap tabular-nums">
             {minPrice < maxPrice ? "From " : ""}₱{minPrice.toFixed(2)}
           </span>
         </div>
@@ -126,10 +136,11 @@ export default function ProductCard({
                     e.stopPropagation();
                     setSelectedColor(color);
                   }}
+                  aria-pressed={isSelected}
                   className={`w-5 h-5 rounded-full border-2 transition-colors ${
                     isSelected
-                      ? "border-zinc-900"
-                      : "border-transparent hover:border-zinc-300"
+                      ? "border-primary"
+                      : "border-transparent hover:border-border"
                   }`}
                 >
                   <span
@@ -149,7 +160,7 @@ export default function ProductCard({
             e.stopPropagation();
             onAddToCart(product, selectedColor?.name);
           }}
-          className="w-full flex items-center justify-center gap-2 bg-zinc-900 text-white py-2.5 rounded-xl font-medium text-sm hover:bg-zinc-700 transition-all duration-300 transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-zinc-900 disabled:active:scale-100"
+          className="w-full flex items-center justify-center gap-2 bg-primary text-white py-2.5 rounded-xl font-medium text-sm hover:bg-primary-hover transition-all duration-300 transform active:scale-95 motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100"
         >
           <Plus className="w-4 h-4" />
           {displayStock <= 0 ? "Out of stock" : "Add to cart"}

@@ -42,12 +42,12 @@ export default async function ProductPage({
   if (!product) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-24 text-center">
-        <p className="text-zinc-500 text-lg mb-6">
+        <p className="text-muted text-lg mb-6">
           We couldn&apos;t find that item.
         </p>
         <Link
           href="/"
-          className="inline-flex bg-zinc-900 text-white px-6 py-3 rounded-xl font-medium hover:bg-zinc-700 transition-colors"
+          className="inline-flex bg-primary text-white px-6 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
         >
           Back to shop
         </Link>

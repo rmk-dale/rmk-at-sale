@@ -36,34 +36,34 @@ export default function CartDrawer() {
       {/* Panel */}
       <div className="absolute top-0 right-0 h-full w-full max-w-md bg-surface border-l border-border flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between px-6 h-16 border-b border-border">
-          <h2 className="text-lg font-semibold text-zinc-900">
+          <h2 className="text-lg font-semibold text-foreground">
             Your cart{" "}
             {items.length > 0 && (
-              <span className="text-zinc-400 font-normal">
-                ({items.length})
-              </span>
+              <span className="text-muted font-normal">({items.length})</span>
             )}
           </h2>
           <button
             onClick={closeCart}
-            className="p-2 rounded-full hover:bg-zinc-100 transition-colors"
+            className="p-2 rounded-full hover:bg-background transition-colors"
             aria-label="Close cart"
           >
-            <X className="w-5 h-5 text-zinc-600" />
+            <X className="w-5 h-5 text-muted" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-6">
           {items.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center gap-3">
-              <ShoppingBag className="w-10 h-10 text-zinc-300" />
-              <p className="text-zinc-500 text-sm">Your cart is empty.</p>
+              <ShoppingBag className="w-10 h-10 text-border" />
+              <p className="text-muted text-sm">
+                Your cart is empty. Browse the sale to get started.
+              </p>
             </div>
           ) : (
             <div className="space-y-5">
               {items.map((item) => (
                 <div key={item.cartItemId || item.id} className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-zinc-50 rounded-xl border border-border flex-shrink-0 relative overflow-hidden flex items-center justify-center">
+                  <div className="w-16 h-16 bg-background rounded-xl border border-border flex-shrink-0 relative overflow-hidden flex items-center justify-center">
                     {item.image ? (
                       <Image
                         src={item.image}
@@ -73,40 +73,42 @@ export default function CartDrawer() {
                         className="object-cover"
                       />
                     ) : (
-                      <ShoppingBag className="w-6 h-6 text-zinc-300" />
+                      <ShoppingBag className="w-6 h-6 text-border" />
                     )}
                   </div>
 
                   <div className="flex-grow min-w-0">
-                    <p className="text-sm font-medium text-zinc-900 truncate">
+                    <p className="text-sm font-medium text-foreground truncate">
                       {item.name}
                     </p>
                     {(item.color || item.size) && (
-                      <p className="text-xs text-zinc-500 mt-0.5 truncate">
+                      <p className="text-xs text-muted mt-0.5 truncate">
                         {[item.color, item.size].filter(Boolean).join(" | ")}
                       </p>
                     )}
-                    <p className="text-sm text-zinc-500 mt-1">
+                    <p className="text-sm text-primary font-medium mt-1 tabular-nums">
                       ₱{item.price.toFixed(2)}
                     </p>
 
-                    <div className="flex items-center gap-3 mt-2 bg-zinc-50 rounded-full px-3 py-1 border border-border w-fit">
+                    <div className="flex items-center gap-3 mt-2 bg-background rounded-full px-3 py-1 border border-border w-fit">
                       <button
                         onClick={() =>
                           updateQuantity(item.cartItemId!, item.quantity - 1)
                         }
-                        className="text-zinc-600 hover:text-zinc-900 transition-colors"
+                        aria-label={`Decrease quantity of ${item.name}`}
+                        className="text-muted hover:text-primary transition-colors"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="w-4 text-center text-sm font-medium text-zinc-900">
+                      <span className="w-4 text-center text-sm font-medium text-foreground tabular-nums">
                         {item.quantity}
                       </span>
                       <button
                         onClick={() =>
                           updateQuantity(item.cartItemId!, item.quantity + 1)
                         }
-                        className="text-zinc-600 hover:text-zinc-900 transition-colors"
+                        aria-label={`Increase quantity of ${item.name}`}
+                        className="text-muted hover:text-primary transition-colors"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>
@@ -115,8 +117,8 @@ export default function CartDrawer() {
 
                   <button
                     onClick={() => removeItem(item.cartItemId!)}
-                    className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all flex-shrink-0"
-                    aria-label="Remove item"
+                    className="p-2 text-muted hover:text-primary hover:bg-primary/5 rounded-full transition-all flex-shrink-0"
+                    aria-label={`Remove ${item.name} from cart`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -129,15 +131,15 @@ export default function CartDrawer() {
         {items.length > 0 && (
           <div className="border-t border-border px-6 py-6">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-zinc-500">Subtotal</span>
-              <span className="text-lg font-semibold text-zinc-900">
+              <span className="text-muted">Subtotal</span>
+              <span className="text-lg font-semibold text-foreground tabular-nums">
                 ₱{getTotal().toFixed(2)}
               </span>
             </div>
             <Link
               href="/cart"
               onClick={closeCart}
-              className="w-full flex items-center justify-center bg-zinc-900 text-white py-3.5 rounded-xl font-medium hover:bg-zinc-700 transition-all"
+              className="w-full flex items-center justify-center bg-primary text-white py-3.5 rounded-xl font-medium hover:bg-primary-hover transition-all"
             >
               View cart & checkout
             </Link>

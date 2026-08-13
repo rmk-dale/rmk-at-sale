@@ -9,6 +9,7 @@
     "lint": "eslint",
     "seed": "node --experimental-strip-types scripts/seed-products.ts",
     "seed:admin": "node --experimental-strip-types scripts/seed-admin.ts",
+    "seed:vitals": "node --experimental-strip-types scripts/seed-vitals.ts",
     "check:admin": "node --experimental-strip-types scripts/check-admin.ts",
     "check:ratelimit": "node --experimental-strip-types scripts/check-ratelimit.ts",
     "check:cache": "node --experimental-strip-types scripts/check-cache.ts",
@@ -17,6 +18,7 @@
     "migrate:orders": "node --experimental-strip-types scripts/migrate-orders.ts"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "bcryptjs": "^2.4.3",
     "lucide-react": "^1.28.0",
     "mongodb": "^6.21.0",

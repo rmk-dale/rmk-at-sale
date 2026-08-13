@@ -155,6 +155,27 @@ export const RATE_LIMITS = {
 
   /** Checkout submissions per session. Backstop against order spam. */
   checkoutPerSession: { limit: 20, windowMs: 60_000 },
+
+  /**
+   * Web-vitals beacons per IP.
+   *
+   * `/api/metrics/vitals` is the one endpoint here that is unauthenticated
+   * *and* writes to Atlas, so it is the cheapest way to burn the write
+   * quota that real orders depend on. Nothing about it is worth guessing,
+   * so this is a volume cap rather than a brute-force defence.
+   *
+   * Sized against honest use: a browser flushes at most one beacon per
+   * page view, carrying up to 8 metrics. 60/minute is roughly a page view
+   * every second, sustained — far beyond a person clicking around, and
+   * still generous for several people behind one office NAT.
+   *
+   * Note the asymmetry with the auth limits: when Redis is unreachable in
+   * production this fails closed like everything else, which here means
+   * measurements are silently dropped. That is the right trade. Losing
+   * telemetry during an outage costs a gap in a chart; admitting unmetered
+   * writes during one costs the database.
+   */
+  vitalsPerIp: { limit: 60, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**

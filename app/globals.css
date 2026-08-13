@@ -1,14 +1,45 @@
 @import "tailwindcss";
 
+/**
+ * Sun & Ember — the storefront palette, derived from the Mega Bundeals
+ * campaign artwork (/home-image.png).
+ *
+ * Every value here has been checked against the background it actually
+ * sits on. The numbers in the comments are WCAG contrast ratios, not
+ * decoration: if you change a hex, re-check the pair it belongs to.
+ *
+ * The load-bearing rule of this palette: Beacon is a fill, never type.
+ * Yellow text fails everywhere it was tempting to use it — 1.5:1 on
+ * Paper, 3.3–3.7:1 on the reds. What does work is the inverse: Beacon as
+ * a background carrying Ink (11.6:1) or deep red (6.2:1). Every ribbon in
+ * this design is built that way round.
+ */
 @theme {
-  --color-background: #fafafa;
-  --color-foreground: #18181b;
-  --color-primary: #18181b;
-  --color-primary-hover: #3f3f46;
-  --color-accent: #d85a30;
-  --color-surface: #ffffff;
-  --color-border: #e4e4e7;
-  --color-muted: #71717a;
+  /* Surfaces */
+  --color-background: #fff8f0; /* Paper  — warm canvas */
+  --color-surface: #ffffff; /* cards, nav, drawers */
+  --color-border: #efe0d2; /* warm hairline */
+
+  /* Type */
+  --color-foreground: #1c1512; /* Ink   — 17.1:1 on Paper */
+  --color-muted: #7a6153; /* Clay  —  5.4:1 on Paper */
+
+  /* Action — one red does buttons, prices, links and active states.
+     5.5:1 on Paper, and carries white at 5.8:1, so it passes AA as
+     both a foreground and a fill. */
+  --color-primary: #c4241a;
+  --color-primary-hover: #a81c13;
+
+  /* Display only. 4.1:1 on Paper — large text and fills, never body copy. */
+  --color-ember: #e63329;
+
+  /* Supporting warm — decorative only. At 2.5:1 on Paper it cannot carry
+     text or represent a control's state; it lost the price slider to
+     Ember Deep for exactly that reason. */
+  --color-accent: #f5821f;
+
+  /* Beacon. A fill, never a foreground. See the rule above. */
+  --color-beacon: #ffc72c;
 }
 
 @layer base {
@@ -17,14 +48,46 @@
     color: var(--color-foreground);
     font-family: var(--font-geist-sans), sans-serif;
   }
+
+  /* The palette leans warm, so the default focus ring (a cold blue) reads
+     as a foreign object. Keyboard users get a ring that belongs here —
+     and one that is visible against both Paper and white cards. */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 @layer utilities {
-  .glass {
-    @apply bg-white/80 backdrop-blur-xl border-b border-border;
+  /**
+   * The signature device, lifted from the campaign poster: a ribbon with
+   * notched ends rather than a rounded pill.
+   *
+   * Two variants because they do different jobs. `.ribbon-flag` is
+   * double-notched and free-standing — it sits inside the sale strip.
+   * `.ribbon-tag` is notched on the trailing edge only, so it can butt
+   * flush against the left edge of a product image.
+   */
+  .ribbon-flag {
+    clip-path: polygon(
+      0 0,
+      100% 0,
+      calc(100% - 8px) 50%,
+      100% 100%,
+      0 100%,
+      8px 50%
+    );
   }
 
+  .ribbon-tag {
+    clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 50%, 100% 100%, 0 100%);
+  }
+
+  /* Card lift. The shadow is warm-tinted rather than neutral black —
+     a grey shadow on a Paper background reads as dirt. */
   .card-hover {
-    @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-zinc-300;
+    @apply transition-all duration-300 hover:-translate-y-1;
+    @apply hover:shadow-lg hover:shadow-[#7a6153]/15 hover:border-[#e2cdb8];
   }
 }

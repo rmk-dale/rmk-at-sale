@@ -59,6 +59,12 @@ export default async function AdminProtectedLayout({
                 >
                   Activity
                 </Link>
+                <Link
+                  href="/admin/performance"
+                  className="text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+                >
+                  Performance
+                </Link>
               </>
             )}
           </div>

@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import CartDrawer from "@/components/CartDrawer";
+import SaleStrip from "@/components/SaleStrip";
 
 /**
  * Wraps the page content. The admin side has its own nav and its own
@@ -25,7 +26,16 @@ export default function StorefrontChrome({
     <>
       <Navbar />
       <CartDrawer />
-      <main className="flex-grow pt-16">{children}</main>
+      {/*
+        The strip sits inside the padded region rather than in the fixed
+        navbar: it scrolls away with the page. Pinning both would cost 6rem
+        of a phone screen permanently, and the offer only needs to be seen,
+        not followed down the page.
+      */}
+      <main className="flex-grow pt-16">
+        <SaleStrip />
+        {children}
+      </main>
     </>
   );
 }

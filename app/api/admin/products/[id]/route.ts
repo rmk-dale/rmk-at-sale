@@ -57,7 +57,7 @@ function parseVariants(input: unknown): import("@/lib/models/product").ProductVa
       color: typeof color === "string" && color.trim() ? color.trim() : undefined,
       size: typeof size === "string" && size.trim() ? size.trim() : undefined,
       price,
-      originalPrice,
+      originalPrice: originalPrice === null ? undefined : originalPrice as number | undefined,
       stock,
     });
   }

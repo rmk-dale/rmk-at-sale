@@ -43,7 +43,7 @@ export default async function AdminProtectedLayout({
               href="/admin/brands"
               className="text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
             >
-              Brands
+              Collections
             </Link>
             {admin.role === "owner" && (
               <>

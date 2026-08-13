@@ -363,7 +363,6 @@ export async function POST(req: NextRequest) {
     const receiptItems = purchasedItems.map((item) => ({
       name: item.name || item.description || "Item",
       brand: item.brand,
-      itemCode: item.itemCode,
       quantity: item.quantity,
       price: item.price,
       color: item.color,

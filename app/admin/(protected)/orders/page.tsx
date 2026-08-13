@@ -246,7 +246,7 @@ export default function AdminOrdersPage() {
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 mt-1">
-                      {item.brand && <span>Brand: {item.brand}</span>}
+                      {item.brand && <span>Collection Name: {item.brand}</span>}
                       {item.brand && (item.color || item.size) && <span>&bull;</span>}
                       {(item.color || item.size) && (
                         <span>
@@ -255,8 +255,6 @@ export default function AdminOrdersPage() {
                             .join(" | ")}
                         </span>
                       )}
-                      {(item.brand || item.color || item.size) && <span>&bull;</span>}
-                      <span className="font-mono">Code: {item.itemCode}</span>
                     </div>
                   </li>
                 ))}

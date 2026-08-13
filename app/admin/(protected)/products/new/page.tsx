@@ -13,7 +13,6 @@ import type { ColorVariant, ProductVariant } from "@/lib/models/product";
 
 export default function NewProductPage() {
   const router = useRouter();
-  const [itemCode, setItemCode] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -72,7 +71,6 @@ export default function NewProductPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          itemCode: itemCode.trim(),
           name: name.trim(),
           description: description.trim(),
           price: Number(computedPrice),
@@ -118,18 +116,6 @@ export default function NewProductPage() {
         className="space-y-6 bg-surface border border-border rounded-2xl p-8"
       >
         <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-600 mb-2">
-              Item Code
-            </label>
-            <input
-              required
-              value={itemCode}
-              onChange={(e) => setItemCode(e.target.value)}
-              placeholder="AT88G01001"
-              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-            />
-          </div>
           {!hasVariants && (
             <div>
               <label className="block text-sm font-medium text-zinc-600 mb-2">
@@ -194,7 +180,7 @@ export default function NewProductPage() {
           )}
           <div>
             <label className="block text-sm font-medium text-zinc-600 mb-2">
-              Brand
+              Collection Name
             </label>
             <select
               value={brand}

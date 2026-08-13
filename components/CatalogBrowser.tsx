@@ -235,7 +235,7 @@ export default function CatalogBrowser({
             {brands.length > 0 && (
               <div className="mb-6">
                 <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
-                  Brand
+                  Collection Name
                 </p>
                 <div className="space-y-2 text-sm text-zinc-700">
                   {brands.map((brandObj) => (

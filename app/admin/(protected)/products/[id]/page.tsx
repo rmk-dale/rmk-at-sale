@@ -32,7 +32,6 @@ export default function EditProductPage() {
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [itemCode, setItemCode] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
@@ -74,7 +73,6 @@ export default function EditProductPage() {
       if (productRes.status === "fulfilled" && productRes.value.ok) {
         const product: AdminProduct = await productRes.value.json();
         if (cancelled) return;
-        setItemCode(product._id);
         setName(product.name || product.description || "");
         setDescription(product.description);
         setPrice(String(product.price));
@@ -132,7 +130,6 @@ export default function EditProductPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          newItemCode: itemCode.trim(),
           name: name.trim(),
           description: description.trim(),
           price: Number(computedPrice),
@@ -182,25 +179,13 @@ export default function EditProductPage() {
         Back to inventory
       </Link>
 
-      <h1 className="text-2xl font-semibold text-zinc-900 mb-1">Edit item</h1>
-      <p className="text-sm text-zinc-500 font-mono mb-8">{id}</p>
+      <h1 className="text-2xl font-semibold text-zinc-900 mb-8">Edit item</h1>
 
       <form
         onSubmit={handleSubmit}
         className="space-y-6 bg-surface border border-border rounded-2xl p-8"
       >
         <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-zinc-600 mb-2">
-              Item Code
-            </label>
-            <input
-              required
-              value={itemCode}
-              onChange={(e) => setItemCode(e.target.value)}
-              className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900"
-            />
-          </div>
           {!hasVariants && (
             <div>
               <label className="block text-sm font-medium text-zinc-600 mb-2">
@@ -265,7 +250,7 @@ export default function EditProductPage() {
 
         <div>
           <label className="block text-sm font-medium text-zinc-600 mb-2">
-            Brand
+            Collection Name
           </label>
           <select
             value={brand}

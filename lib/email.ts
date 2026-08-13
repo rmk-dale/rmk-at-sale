@@ -89,7 +89,7 @@ export async function sendOTPEmail(to: string, otp: string): Promise<void> {
 export async function sendReceiptEmail(
   to: string,
   totalAmount: number,
-  items: Array<{ name: string; brand?: string; itemCode: string; quantity: number; price: number; color?: string; size?: string }>,
+  items: Array<{ name: string; brand?: string; quantity: number; price: number; color?: string; size?: string }>,
   orderNumber: string,
 ): Promise<void> {
   // `name`, `color` and `size` are escaped before interpolation. This
@@ -102,11 +102,10 @@ export async function sendReceiptEmail(
         if (item.color) parts.push(`Color: ${escapeHtml(item.color)}`);
         if (item.size) parts.push(`Size: ${escapeHtml(item.size)}`);
         const variantInfo = parts.length > 0 ? `<br/><span style="color:#71717a;font-size:14px;">${parts.join(" | ")}</span>` : "";
-        const brandInfo = item.brand ? `<br/><span style="color:#71717a;font-size:14px;">Brand: ${escapeHtml(item.brand)}</span>` : "";
-        const codeInfo = `<br/><span style="color:#a1a1aa;font-size:12px;font-family:monospace;">Code: ${escapeHtml(item.itemCode)}</span>`;
+        const brandInfo = item.brand ? `<br/><span style="color:#71717a;font-size:14px;">Collection Name: ${escapeHtml(item.brand)}</span>` : "";
         return `<li style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e4e4e7; list-style: none;">
           <div style="font-weight: 500;">${item.quantity}x ${escapeHtml(item.name)} — ₱${(item.price * item.quantity).toFixed(2)} <span style="color:#71717a;font-size:14px;font-weight:normal;">(₱${item.price.toFixed(2)} ea)</span></div>
-          ${brandInfo}${variantInfo}${codeInfo}
+          ${brandInfo}${variantInfo}
         </li>`;
       }
     )

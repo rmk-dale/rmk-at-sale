@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
 import { requireAdmin } from "@/lib/adminGuard";
 import {
   getAdminProducts,
@@ -95,7 +96,6 @@ export async function POST(req: NextRequest) {
 
   try {
     const {
-      itemCode,
       name,
       description,
       price,
@@ -109,12 +109,7 @@ export async function POST(req: NextRequest) {
       featured,
     } = await req.json();
 
-    if (!itemCode || typeof itemCode !== "string") {
-      return NextResponse.json(
-        { error: "Item Code is required." },
-        { status: 400 },
-      );
-    }
+
     if (!name || typeof name !== "string") {
       return NextResponse.json(
         { error: "Name is required." },
@@ -176,18 +171,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const newId = new ObjectId().toHexString();
     const products = await getProductsCollection();
-    const existing = await products.findOne({ _id: itemCode });
-    if (existing) {
-      return NextResponse.json(
-        { error: `Item Code ${itemCode} already exists.` },
-        { status: 409 },
-      );
-    }
 
     const now = new Date();
     await products.insertOne({
-      _id: itemCode,
+      _id: newId,
       name,
       description,
       price,
@@ -203,13 +192,13 @@ export async function POST(req: NextRequest) {
       updatedAt: now,
     });
 
-    invalidateProductCaches(itemCode);
+    invalidateProductCaches(newId);
 
     await recordAudit({
       admin,
       action: "product.create",
       targetType: "product",
-      targetId: itemCode,
+      targetId: newId,
       targetLabel: name,
       changes: [
         { field: "price", from: null, to: price },
@@ -218,7 +207,7 @@ export async function POST(req: NextRequest) {
       ip: getClientIp(req),
     });
 
-    return NextResponse.json({ success: true, id: itemCode });
+    return NextResponse.json({ success: true, id: newId });
   } catch (error) {
     console.error("Error adding product:", error);
     return NextResponse.json(

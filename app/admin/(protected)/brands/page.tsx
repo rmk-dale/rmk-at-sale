@@ -18,12 +18,12 @@ export default async function BrandsPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-semibold text-zinc-900">Brands</h1>
+        <h1 className="text-2xl font-semibold text-zinc-900">Collections</h1>
       </div>
 
       <div className="bg-surface border border-border rounded-2xl overflow-hidden mb-8 p-6">
         <h2 className="text-lg font-medium text-zinc-900 mb-4">
-          Add a new brand
+          Add a new collection
         </h2>
         <AddBrandForm />
       </div>
@@ -31,7 +31,7 @@ export default async function BrandsPage() {
       <div className="bg-surface border border-border rounded-2xl overflow-hidden">
         {brands.length === 0 ? (
           <div className="p-16 text-center">
-            <p className="text-zinc-500 text-lg mb-2">No brands found.</p>
+            <p className="text-zinc-500 text-lg mb-2">No collections found.</p>
             <p className="text-zinc-400 text-sm">
               Add one above to get started.
             </p>
@@ -40,7 +40,7 @@ export default async function BrandsPage() {
           <table className="w-full text-sm text-left">
             <thead className="bg-zinc-50/50 text-zinc-500 border-b border-border">
               <tr>
-                <th className="px-6 py-4 font-medium">Brand Name</th>
+                <th className="px-6 py-4 font-medium">Collection Name</th>
                 <th className="px-6 py-4 font-medium text-right">Actions</th>
               </tr>
             </thead>

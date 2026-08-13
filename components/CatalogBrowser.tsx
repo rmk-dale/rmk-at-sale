@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import Image from "next/image";
 import { useCartStore } from "@/lib/store";
 import { ChevronDown } from "lucide-react";
 import ProductCard, { type CardProduct } from "@/components/ProductCard";
@@ -39,6 +40,16 @@ export default function CatalogBrowser({
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const addItem = useCartStore((state) => state.addItem);
+
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const slides = [0, 1, 2]; // 3 slides for the mockup
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % slides.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [slides.length]);
 
   const toggle = (value: string, list: string[]) =>
     list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -136,24 +147,53 @@ export default function CatalogBrowser({
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-10">
-        {/* Banner Carousel */}
-        <div className="relative w-full overflow-hidden rounded-2xl mb-12 bg-zinc-100 group">
-          <div className="flex w-full transition-transform duration-500 ease-in-out">
-            <div className="min-w-full relative aspect-[1976/688]">
-              <img
-                src="/HOME%20IMAGE.png"
-                alt="American Tourister Sale"
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-            </div>
-            {/* Additional carousel slides would go here */}
+        {/*
+          Banner carousel.
+
+          The height is derived from the artwork's own ratio via `aspect-`
+          rather than pinned to a pixel value. A fixed height forces
+          `object-cover` to crop the sides to fill it — at 1232px wide the
+          previous `h-[700px]` threw away roughly 180px off each edge — and
+          the crop got worse as the viewport narrowed. Tying the box to
+          1893/831 means the frame follows the image instead of the image
+          fighting the frame, so nothing is lost at any breakpoint.
+        */}
+        <div className="relative w-full overflow-hidden rounded-2xl mb-12 bg-zinc-100 group aspect-[1893/831]">
+          <div
+            className="flex w-full h-full transition-transform duration-500 ease-in-out"
+            style={{ transform: `translateX(-${currentSlide * 100}%)` }}
+          >
+            {slides.map((slideIndex) => (
+              <div key={slideIndex} className="min-w-full relative h-full">
+                <Image
+                  src="/home-image.png"
+                  alt={`American Tourister Sale Slide ${slideIndex + 1}`}
+                  fill
+                  // The banner spans the full content column, which is capped
+                  // at max-w-7xl minus px-6 padding = 1232px.
+                  sizes="(max-width: 1280px) 100vw, 1232px"
+                  priority={slideIndex === 0}
+                  // `contain` over `cover`: should a future slide ship at a
+                  // different ratio it letterboxes rather than silently
+                  // cropping the promo text out of frame.
+                  className="object-contain"
+                />
+              </div>
+            ))}
           </div>
           
-          {/* Carousel Indicators (Mockup for future slides) */}
+          {/* Carousel Indicators */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 z-10">
-            <button className="w-2.5 h-2.5 rounded-full bg-white transition-opacity opacity-100" aria-label="Go to slide 1"></button>
-            <button className="w-2.5 h-2.5 rounded-full bg-white transition-opacity opacity-50 hover:opacity-75" aria-label="Go to slide 2"></button>
-            <button className="w-2.5 h-2.5 rounded-full bg-white transition-opacity opacity-50 hover:opacity-75" aria-label="Go to slide 3"></button>
+            {slides.map((slideIndex) => (
+              <button 
+                key={slideIndex}
+                onClick={() => setCurrentSlide(slideIndex)}
+                className={`w-2.5 h-2.5 rounded-full bg-white transition-opacity ${
+                  currentSlide === slideIndex ? "opacity-100" : "opacity-50 hover:opacity-75"
+                }`}
+                aria-label={`Go to slide ${slideIndex + 1}`}
+              />
+            ))}
           </div>
         </div>
 

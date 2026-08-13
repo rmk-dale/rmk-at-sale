@@ -16,6 +16,7 @@ interface AdminProduct {
   name?: string;
   description: string;
   price: number;
+  originalPrice?: number;
   stock: number;
   image: string;
   hoverImage?: string;
@@ -35,6 +36,7 @@ export default function EditProductPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
+  const [originalPrice, setOriginalPrice] = useState("");
   const [stock, setStock] = useState("");
   const [image, setImage] = useState("");
   const [hoverImage, setHoverImage] = useState("");
@@ -76,6 +78,7 @@ export default function EditProductPage() {
         setName(product.name || product.description || "");
         setDescription(product.description);
         setPrice(String(product.price));
+        setOriginalPrice(product.originalPrice ? String(product.originalPrice) : "");
         setStock(String(product.stock));
         setImage(product.image || "");
         setHoverImage(product.hoverImage || "");
@@ -133,6 +136,7 @@ export default function EditProductPage() {
           name: name.trim(),
           description: description.trim(),
           price: Number(computedPrice),
+          originalPrice: originalPrice ? Number(originalPrice) : null,
           stock: Number(computedStock),
           image: finalImage,
           hoverImage: finalHoverImage || undefined,
@@ -198,6 +202,20 @@ export default function EditProductPage() {
                 step="0.01"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
+                className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-600 mb-2">
+                Original price (optional)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={originalPrice}
+                onChange={(e) => setOriginalPrice(e.target.value)}
+                placeholder="0.00"
                 className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
               />
             </div>

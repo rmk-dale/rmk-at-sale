@@ -11,6 +11,7 @@ export interface CardProduct {
   name: string;
   description: string;
   price: number;
+  originalPrice?: number;
   stock: number;
   image: string;
   hoverImage?: string;
@@ -37,12 +38,20 @@ export default function ProductCard({
   const image = selectedColor?.image || product.image;
   const hoverImage = selectedColor?.hoverImage || product.hoverImage;
 
-  // Determine display price
   let minPrice = product.price;
   let maxPrice = product.price;
+  let maxOriginalPrice = product.originalPrice;
   if (product.variants && product.variants.length > 0) {
     minPrice = Math.min(...product.variants.map((v) => v.price));
     maxPrice = Math.max(...product.variants.map((v) => v.price));
+    
+    const variantOriginalPrices = product.variants
+      .map((v) => v.originalPrice)
+      .filter((p): p is number => typeof p === 'number');
+    
+    if (variantOriginalPrices.length > 0) {
+      maxOriginalPrice = Math.max(...variantOriginalPrices);
+    }
   }
 
   // Determine display stock for the selected color (across all sizes)
@@ -115,9 +124,16 @@ export default function ProductCard({
           <h2 className="text-base font-medium text-foreground leading-tight">
             {product.name}
           </h2>
-          <span className="text-primary font-semibold text-sm whitespace-nowrap tabular-nums">
-            {minPrice < maxPrice ? "From " : ""}₱{minPrice.toFixed(2)}
-          </span>
+          <div className="flex flex-col items-end">
+            {maxOriginalPrice && maxOriginalPrice > minPrice && (
+              <span className="text-muted text-xs line-through tabular-nums -mb-1">
+                ₱{maxOriginalPrice.toFixed(2)}
+              </span>
+            )}
+            <span className="text-primary font-semibold text-sm whitespace-nowrap tabular-nums">
+              {minPrice < maxPrice ? "From " : ""}₱{minPrice.toFixed(2)}
+            </span>
+          </div>
         </div>
 
         <div className="flex-grow" />

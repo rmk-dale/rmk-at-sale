@@ -56,6 +56,7 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
   );
 
   const displayPrice = activeVariant ? activeVariant.price : product.price;
+  const displayOriginalPrice = activeVariant?.originalPrice ?? product.originalPrice;
   const displayStock = activeVariant ? activeVariant.stock : product.stock;
 
   const handleAddToCart = () => {
@@ -64,6 +65,7 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
         id: product.id,
         name: product.name,
         price: displayPrice,
+        originalPrice: displayOriginalPrice,
         image: selectedColor?.image || product.image,
         quantity: 1,
         color: selectedColor?.name,
@@ -140,6 +142,11 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
           </h1>
 
           <div className="flex items-center gap-2 mb-6">
+            {displayOriginalPrice && displayOriginalPrice > displayPrice && (
+              <span className="text-xl font-medium text-muted line-through tabular-nums mr-1">
+                ₱{displayOriginalPrice.toFixed(2)}
+              </span>
+            )}
             <span className="text-2xl font-semibold text-primary tabular-nums">
               ₱{displayPrice.toFixed(2)}
             </span>

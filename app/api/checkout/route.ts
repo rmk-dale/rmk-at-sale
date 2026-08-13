@@ -279,6 +279,8 @@ export async function POST(req: NextRequest) {
             totalAmount += itemPrice * quantity;
             purchasedItems.push({
               itemCode: id,
+              name: product.name || product.description,
+              brand: product.brand,
               description: product.description,
               quantity,
               price: itemPrice,
@@ -359,7 +361,9 @@ export async function POST(req: NextRequest) {
     // still in flight. `after` is Next's supported way to keep work alive
     // past the response for exactly this case.
     const receiptItems = purchasedItems.map((item) => ({
-      name: item.description,
+      name: item.name || item.description || "Item",
+      brand: item.brand,
+      itemCode: item.itemCode,
       quantity: item.quantity,
       price: item.price,
       color: item.color,

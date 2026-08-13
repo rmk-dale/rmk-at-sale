@@ -89,7 +89,7 @@ export async function sendOTPEmail(to: string, otp: string): Promise<void> {
 export async function sendReceiptEmail(
   to: string,
   totalAmount: number,
-  items: Array<{ name: string; quantity: number; price: number; color?: string; size?: string }>,
+  items: Array<{ name: string; brand?: string; itemCode: string; quantity: number; price: number; color?: string; size?: string }>,
   orderNumber: string,
 ): Promise<void> {
   // `name`, `color` and `size` are escaped before interpolation. This
@@ -99,10 +99,15 @@ export async function sendReceiptEmail(
     .map(
       (item) => {
         const parts = [];
-        if (item.color) parts.push(escapeHtml(item.color));
-        if (item.size) parts.push(`Size ${escapeHtml(item.size)}`);
-        const variantInfo = parts.length > 0 ? ` (${parts.join(", ")})` : "";
-        return `<li>${item.quantity}x ${escapeHtml(item.name)}${variantInfo} - ₱${(item.price * item.quantity).toFixed(2)}</li>`;
+        if (item.color) parts.push(`Color: ${escapeHtml(item.color)}`);
+        if (item.size) parts.push(`Size: ${escapeHtml(item.size)}`);
+        const variantInfo = parts.length > 0 ? `<br/><span style="color:#71717a;font-size:14px;">${parts.join(" | ")}</span>` : "";
+        const brandInfo = item.brand ? `<br/><span style="color:#71717a;font-size:14px;">Brand: ${escapeHtml(item.brand)}</span>` : "";
+        const codeInfo = `<br/><span style="color:#a1a1aa;font-size:12px;font-family:monospace;">Code: ${escapeHtml(item.itemCode)}</span>`;
+        return `<li style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e4e4e7; list-style: none;">
+          <div style="font-weight: 500;">${item.quantity}x ${escapeHtml(item.name)} — ₱${(item.price * item.quantity).toFixed(2)} <span style="color:#71717a;font-size:14px;font-weight:normal;">(₱${item.price.toFixed(2)} ea)</span></div>
+          ${brandInfo}${variantInfo}${codeInfo}
+        </li>`;
       }
     )
     .join("");
@@ -125,7 +130,7 @@ export async function sendReceiptEmail(
           <span style="color:#71717a;font-size:14px;">Quote this if you contact us about your order.</span>
         </p>
         <p>Here is your receipt:</p>
-        <ul style="background: #f4f4f5; padding: 20px; border-radius: 8px;">${itemsHtml}</ul>
+        <ul style="background: #f4f4f5; padding: 20px; border-radius: 8px; margin: 0;">${itemsHtml}</ul>
         <h3>Total: ₱${totalAmount.toFixed(2)}</h3>
         <p style="margin-top: 24px; color: #52525b;">Someone from our team will contact you shortly to finalize and confirm your order.</p>
       </div>

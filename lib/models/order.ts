@@ -17,7 +17,9 @@ export {
 
 export interface OrderItem {
   itemCode: string;
-  description: string;
+  name?: string;
+  brand?: string;
+  description?: string;
   quantity: number;
   price: number;
   color?: string;

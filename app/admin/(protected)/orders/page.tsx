@@ -20,7 +20,9 @@ interface AdminOrder {
   buyerEmail: string;
   items: {
     itemCode: string;
-    description: string;
+    name?: string;
+    brand?: string;
+    description?: string;
     quantity: number;
     price: number;
     color?: string;
@@ -234,23 +236,28 @@ export default function AdminOrdersPage() {
                 </div>
               </div>
 
-              <ul className="text-sm text-zinc-600 mb-4 space-y-1">
+              <ul className="text-sm text-zinc-600 mb-4 space-y-3">
                 {order.items.map((item, i) => (
-                  <li key={i}>
-                    {item.quantity}x {item.description}
-                    {(item.color || item.size) && (
-                      <span className="text-zinc-500">
-                        {" "}
-                        ({[item.color, item.size && `Size ${item.size}`]
-                          .filter(Boolean)
-                          .join(", ")}
-                        )
+                  <li key={i} className="flex flex-col">
+                    <div className="font-medium text-zinc-900">
+                      {item.quantity}x {item.name || item.description || "Item"}
+                      <span className="text-zinc-500 font-normal ml-2">
+                        — ₱{(item.price * item.quantity).toFixed(2)} <span className="text-xs text-zinc-400">(₱{item.price.toFixed(2)} ea)</span>
                       </span>
-                    )}{" "}
-                    <span className="text-zinc-400 font-mono text-xs">
-                      ({item.itemCode})
-                    </span>{" "}
-                    — ₱{(item.price * item.quantity).toFixed(2)}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 mt-1">
+                      {item.brand && <span>Brand: {item.brand}</span>}
+                      {item.brand && (item.color || item.size) && <span>&bull;</span>}
+                      {(item.color || item.size) && (
+                        <span>
+                          {[item.color && `Color: ${item.color}`, item.size && `Size: ${item.size}`]
+                            .filter(Boolean)
+                            .join(" | ")}
+                        </span>
+                      )}
+                      {(item.brand || item.color || item.size) && <span>&bull;</span>}
+                      <span className="font-mono">Code: {item.itemCode}</span>
+                    </div>
                   </li>
                 ))}
               </ul>

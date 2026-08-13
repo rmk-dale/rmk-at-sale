@@ -164,7 +164,7 @@ export async function PATCH(
                 { session },
               );
               throw new RestockUnavailableError(
-                existing?.description ?? item.description,
+                existing?.name ?? existing?.description ?? item.name ?? item.description ?? "Unknown item",
                 existing?.stock ?? 0,
               );
             }

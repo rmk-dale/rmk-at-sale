@@ -84,8 +84,10 @@ export default function ProductCard({
     return {
       minPrice: Math.min(...colorVariants.map((v) => v.price)),
       maxPrice: Math.max(...colorVariants.map((v) => v.price)),
-      maxOriginalPrice:
-        originals.length > 0 ? Math.max(...originals) : product.originalPrice,
+      // No fallback to `product.originalPrice`. That field is the max across
+      // whichever variants carry one, so on a colour where none do it would
+      // quote another colour's "was" price as this one's.
+      maxOriginalPrice: originals.length > 0 ? Math.max(...originals) : undefined,
     };
   }, [colorVariants, product.price, product.originalPrice]);
 
@@ -120,7 +122,12 @@ export default function ProductCard({
       id: product.id,
       name: product.name,
       price: addableVariant?.price ?? product.price,
-      originalPrice: addableVariant?.originalPrice ?? product.originalPrice,
+      // Never `?? product.originalPrice`: a variant that resolved but has no
+      // original price is not discounted, and the aggregate would put a
+      // phantom "you saved ₱X" on the cart line.
+      originalPrice: addableVariant
+        ? addableVariant.originalPrice
+        : product.originalPrice,
       image,
       color: selectedColor?.name,
       variantStock: addableVariant?.stock ?? product.stock,

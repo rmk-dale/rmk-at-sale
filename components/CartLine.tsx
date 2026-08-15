@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import { useCartStore, cartLineKey, type CartItem } from "@/lib/store";
 import { MAX_QUANTITY_PER_LINE } from "@/lib/validation";
-import { resolveVariantImage } from "@/lib/models/product";
+// From lib/productImages, not lib/models/product: that module imports
+// getDb, so a value import from it would pull the MongoDB driver into the
+// client bundle. The type import below is erased and stays safe.
+import { resolveVariantImage } from "@/lib/productImages";
 import type { PublicProduct } from "@/lib/models/product";
 
 interface CartLineProps {

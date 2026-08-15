@@ -32,29 +32,6 @@ export interface ProductVariant {
   image?: string; // path into public/items/ — this colour, at this size
 }
 
-/**
- * Resolves the photo to show for a colour/size selection.
- *
- * Most specific wins: the exact variant's own photo, then the colour's,
- * then the product's. Shared by the storefront and the admin preview so
- * the two cannot disagree about what a given selection looks like.
- */
-export function resolveVariantImage(
-  product: Pick<PublicProduct, "image" | "colors" | "variants">,
-  colorName?: string,
-  size?: string,
-): string {
-  const variant = product.variants?.find(
-    (v) =>
-      (v.color ?? undefined) === (colorName ?? undefined) &&
-      (v.size ?? undefined) === (size ?? undefined),
-  );
-  if (variant?.image) return variant.image;
-  const color = product.colors?.find((c) => c.name === colorName);
-  if (color?.image) return color.image;
-  return product.image;
-}
-
 export interface ProductDoc {
   // A generated ObjectId hex, assigned on insert. Deliberately not a
   // human-authored item code: nobody should have to type a unique key into

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState, useEffect } from "react";
 import { useCartStore } from "@/lib/store";
 import { useCatalog } from "@/lib/useCatalog";
 import CartLine from "@/components/CartLine";
@@ -17,16 +17,12 @@ export default function CartPage() {
   /*
     Whether the persisted cart has been read out of localStorage yet. The
     server has no localStorage, so it must render the pre-hydration state
-    or React reports a mismatch. Subscribing to zustand's own hydration
-    signal says what is actually being waited for, where the previous
-    `mounted` flag set from an effect only approximated it — and cost a
-    second render pass on every mount.
+    or React reports a mismatch.
   */
-  const hydrated = useSyncExternalStore(
-    useCartStore.persist.onFinishHydration,
-    () => useCartStore.persist.hasHydrated(),
-    () => false,
-  );
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"CART" | "EMAIL" | "OTP" | "SUCCESS">(

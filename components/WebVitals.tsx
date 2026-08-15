@@ -35,11 +35,19 @@ const ENDPOINT = "/api/metrics/vitals";
  * Fraction of page loads that report, from
  * `NEXT_PUBLIC_VITALS_SAMPLE_RATE`.
  *
- * At current traffic, 1.0 (report everything) gives the tightest numbers
- * and costs little. Turn it down if write volume ever becomes a concern —
- * percentiles survive sampling well, because they describe a distribution
- * rather than a total, and a p75 drawn from a random tenth of page views
- * is very close to the p75 of all of them.
+ * Defaults to a quarter of page views, down from all of them.
+ *
+ * This endpoint is the only unauthenticated write path in the app, and it
+ * writes to the same Atlas cluster orders live in — a cluster throttled at
+ * roughly 100 operations per second, where every beacon competes with a
+ * checkout. Reporting every page view spent that budget continuously to
+ * measure a storefront used by one company.
+ *
+ * Percentiles survive sampling well, because they describe a distribution
+ * rather than a total: a p75 drawn from a random quarter of page views is
+ * very close to the p75 of all of them, and the Performance tab reads in
+ * p75s. Raise it if a chart ever looks too sparse to act on; the write
+ * cost scales linearly with it.
  *
  * The decision is made once here, at module scope, rather than per metric.
  * Sampling each metric independently would produce page views reporting
@@ -47,10 +55,30 @@ const ENDPOINT = "/api/metrics/vitals";
  * disagree with each other for no reason.
  */
 const SAMPLE_RATE = (() => {
-  const parsed = Number(process.env.NEXT_PUBLIC_VITALS_SAMPLE_RATE ?? "1");
-  if (!Number.isFinite(parsed)) return 1;
+  const parsed = Number(process.env.NEXT_PUBLIC_VITALS_SAMPLE_RATE ?? "0.25");
+  if (!Number.isFinite(parsed)) return 0.25;
   return Math.min(1, Math.max(0, parsed));
 })();
+
+/**
+ * A random id for this tab, sent with each beacon so the collector can
+ * rate-limit per client instead of per IP.
+ *
+ * The whole company shares one NAT'd address, so a per-IP limit throttles
+ * everybody at once — it cannot tell twelve colleagues browsing from one
+ * person misbehaving. This can, at least for honest clients; the collector
+ * keeps a much looser per-IP ceiling as the flood backstop.
+ *
+ * Deliberately not persisted. It lives in module scope for the life of the
+ * page and is gone on reload, so it identifies a tab for a few minutes and
+ * never becomes something that tracks a person across visits. That keeps
+ * the promise the collector makes about storing nothing identifying — the
+ * id is used for a rate-limit key and is never written to the database.
+ */
+const CLIENT_ID =
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 /**
  * Whether this particular page load reports at all.
@@ -108,6 +136,7 @@ function flush() {
   for (const [path, metrics] of byPath) {
     const body = JSON.stringify({
       route: path,
+      cid: CLIENT_ID,
       metrics: metrics.map(({ name, value, navigationType }) => ({
         name,
         value,

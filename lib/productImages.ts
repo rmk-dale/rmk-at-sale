@@ -34,3 +34,37 @@ export function resolveVariantImage(
 
   return product.image;
 }
+
+/**
+ * The second photo for a colour/size selection, shown on hover.
+ *
+ * Same chain as `resolveVariantImage` and deliberately independent of it: the
+ * two are resolved separately rather than as a pair, so a variant that has
+ * its own main photo but no hover still gets *a* hover from the colour
+ * instead of losing the behaviour entirely.
+ *
+ * Returns undefined when nothing anywhere has a hover photo, which callers
+ * read as "no hover swap" rather than as an error — unlike the main photo,
+ * there is no product-level guarantee that one exists.
+ */
+export function resolveVariantHoverImage(
+  product: {
+    hoverImage?: string;
+    colors?: ColorVariant[];
+    variants?: ProductVariant[];
+  },
+  colorName?: string,
+  size?: string,
+): string | undefined {
+  const variant = product.variants?.find(
+    (v) =>
+      (v.color ?? undefined) === (colorName ?? undefined) &&
+      (v.size ?? undefined) === (size ?? undefined),
+  );
+  if (variant?.hoverImage) return variant.hoverImage;
+
+  const color = product.colors?.find((c) => c.name === colorName);
+  if (color?.hoverImage) return color.hoverImage;
+
+  return product.hoverImage;
+}

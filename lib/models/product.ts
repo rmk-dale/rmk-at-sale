@@ -10,16 +10,16 @@ export interface ColorVariant {
 }
 
 /**
- * One cell of the colour × size matrix: the price, stock and photo for a
+ * One cell of the colour × size matrix: the price, stock and photos for a
  * specific combination.
  *
- * `image` lives here rather than on a size, because a size does not have
+ * The photos live here rather than on a size, because a size does not have
  * one appearance — Sporty Blue at 55cm and Deep Red at 55cm are different
  * photographs. This is the only place in the schema that names a colour and
- * a size together, so it is the only place that photo can go.
+ * a size together, so it is the only place they can go.
  *
- * It is optional, and display resolution falls back variant → colour →
- * product, so a document whose variants predate this field renders exactly
+ * Both are optional, and display resolution falls back variant → colour →
+ * product, so a document whose variants predate either field renders exactly
  * as it did before. That is also why `sizes` below stays a plain
  * `string[]`: nothing about a size in isolation changed.
  */
@@ -30,6 +30,10 @@ export interface ProductVariant {
   originalPrice?: number;
   stock: number;
   image?: string; // path into public/items/ — this colour, at this size
+  // The second photo for this exact cell, shown on hover of the detail hero.
+  // Purely a display field: it never reaches a cart line or an order, so a
+  // missing one degrades to the colour's hover and nothing downstream cares.
+  hoverImage?: string;
 }
 
 export interface ProductDoc {

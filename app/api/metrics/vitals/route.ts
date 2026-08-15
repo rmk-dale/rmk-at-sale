@@ -1,8 +1,9 @@
 import { ObjectId } from "mongodb";
 import {
   RATE_LIMITS,
-  checkRateLimit,
+  checkRateLimits,
   getClientIp,
+  hashIdentifier,
 } from "@/lib/rateLimit";
 import {
   deviceFromUserAgent,
@@ -66,15 +67,9 @@ function accepted(): Response {
 }
 
 export async function POST(req: Request) {
-  const limit = await checkRateLimit(
-    `vitals:ip:${getClientIp(req)}`,
-    RATE_LIMITS.vitalsPerIp,
-  );
-  // Deliberately not a 429. A rejected beacon has nothing useful to do
-  // with the refusal, and telling a flooder they have been throttled is
-  // more information than they need.
-  if (!limit.ok) return accepted();
-
+  // The body is read before the rate-limit check because the per-client
+  // key lives in it. That is safe: the read is capped at MAX_BODY_BYTES
+  // below and nothing touches the database until every check has passed.
   let raw: string;
   try {
     raw = await req.text();
@@ -95,12 +90,40 @@ export async function POST(req: Request) {
 
   if (typeof payload !== "object" || payload === null) return accepted();
 
-  const { route, metrics } = payload as {
+  const { route, metrics, cid } = payload as {
     route?: unknown;
     metrics?: unknown;
+    cid?: unknown;
   };
 
   if (!Array.isArray(metrics) || metrics.length === 0) return accepted();
+
+  /**
+   * Two limits, for two different jobs.
+   *
+   * The per-client key is a random id the reporter generates per tab. It
+   * is client-supplied, so an attacker can rotate it freely — it is not a
+   * security control, it is what stops one honest tab from beaconing in a
+   * loop. The per-IP limit is the actual flood ceiling, and it is sized
+   * for a whole office behind one NAT rather than for one person, which
+   * is what the old 60/minute per-IP limit got wrong: it throttled the
+   * company, not an abuser.
+   *
+   * Hashed so a client id never lands in Redis in the form it was sent.
+   */
+  const clientKey =
+    typeof cid === "string" && cid.length > 0 && cid.length <= 64
+      ? hashIdentifier(cid)
+      : "anonymous";
+
+  const limit = await checkRateLimits([
+    { key: `vitals:cid:${clientKey}`, rule: RATE_LIMITS.vitalsPerClient },
+    { key: `vitals:ip:${getClientIp(req)}`, rule: RATE_LIMITS.vitalsPerIp },
+  ]);
+  // Deliberately not a 429. A rejected beacon has nothing useful to do
+  // with the refusal, and telling a flooder they have been throttled is
+  // more information than they need.
+  if (!limit.ok) return accepted();
 
   const at = new Date();
   const normalizedRoute = normalizeRoute(route);

@@ -106,13 +106,38 @@ interface CounterDoc {
  * Allocates the next order number.
  *
  * `findOneAndUpdate` with `$inc` is atomic, so two checkouts running in
- * different containers cannot be handed the same sequence value. Runs
- * inside the checkout transaction so a rolled-back order does not leave a
- * gap that looks like a lost order.
+ * different containers cannot be handed the same sequence value.
+ *
+ * ## Why this is no longer called inside the checkout transaction
+ *
+ * It used to be, so that a rolled-back order left no gap in the sequence.
+ * That guarantee turned out to be expensive in a way that gets worse
+ * exactly when the shop is busiest:
+ *
+ * Every checkout increments the *same* document, `counters/orders:<year>`.
+ * Two concurrent transactions writing one document produce a
+ * `WriteConflict`, and `withTransaction` resolves that by retrying — the
+ * **entire transaction**, every operation in it, not just the increment.
+ * So a conflict did not cost one round trip, it cost a whole checkout's
+ * worth, and the probability of conflict rises with precisely the
+ * concurrency the shop is trying to support. A queue of shoppers made
+ * itself slower.
+ *
+ * Allocating outside the transaction means a checkout that later fails on
+ * stock burns a number, leaving a gap. That is a cosmetic cost and a
+ * cheap one: `orderNumber` carries a unique sparse index so a gap can
+ * never become a collision, `statusHistory` records every transition, and
+ * the audit log covers the rest — there is no question about a missing
+ * order that a gap makes harder to answer. Weigh it against the
+ * alternative, where a lunchtime rush causes retry storms.
+ *
+ * `session` is therefore optional now. Pass one only if you have a caller
+ * that genuinely needs the allocation to roll back with its transaction,
+ * and accept the contention that comes with it.
  */
 export async function nextOrderNumber(
   db: Db,
-  session: ClientSession,
+  session?: ClientSession,
 ): Promise<string> {
   const counters = db.collection<CounterDoc>("counters");
   const year = new Date().getFullYear();
@@ -120,7 +145,7 @@ export async function nextOrderNumber(
   const counter = await counters.findOneAndUpdate(
     { _id: `orders:${year}` },
     { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: "after", session },
+    { upsert: true, returnDocument: "after", ...(session ? { session } : {}) },
   );
 
   const seq = counter?.seq ?? 1;

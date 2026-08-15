@@ -1,14 +1,24 @@
 import crypto from "crypto";
+// Relative, with the explicit .ts extension, rather than the "@/lib/…"
+// alias used elsewhere. scripts/check-ratelimit.ts imports this module
+// directly under `node --experimental-strip-types`, which resolves neither
+// tsconfig `paths` nor extensionless specifiers — an aliased import here
+// breaks `npm run check:ratelimit` at runtime while type-checking clean.
+// `allowImportingTsExtensions` in tsconfig.json exists for this case.
+import {
+  IS_PRODUCTION,
+  UPSTASH_CONFIGURED as IS_CONFIGURED,
+  upstashCommand as upstash,
+} from "./upstash.ts";
 
 /**
  * Distributed rate limiting, backed by Upstash Redis over its REST API.
  *
- * Why REST and not `@upstash/ratelimit`: the REST endpoint is a plain
- * fetch, so this adds no dependency, no cold-start cost, and works
- * unchanged on both the Node and Edge runtimes. The algorithm below is a
- * sliding-window log implemented as a single Lua script, so counting and
- * admitting happen atomically in one round trip — two containers racing on
- * the same key cannot both be admitted past the limit.
+ * The transport lives in `lib/upstash.ts`, shared with the checkout
+ * concurrency gate. The algorithm below is a sliding-window log
+ * implemented as a single Lua script, so counting and admitting happen
+ * atomically in one round trip — two containers racing on the same key
+ * cannot both be admitted past the limit.
  *
  * Why Redis and not Mongo: these counters are written on every attempt
  * against the auth endpoints, they are worthless after their window
@@ -16,26 +26,11 @@ import crypto from "crypto";
  * containers at once. That is precisely Redis's job, and it keeps
  * brute-force traffic off the Atlas cluster that serves real orders.
  *
- * Required environment variables:
- *   UPSTASH_REDIS_REST_URL
- *   UPSTASH_REDIS_REST_TOKEN
- *
- * If they are missing in production this module FAILS CLOSED — protected
- * endpoints reject rather than run unmetered. In development it falls back
- * to an in-process limiter so `next dev` works with no extra setup.
+ * If the Upstash environment variables are missing in production this
+ * module FAILS CLOSED — protected endpoints reject rather than run
+ * unmetered. In development it falls back to an in-process limiter so
+ * `next dev` works with no extra setup.
  */
-
-const REST_URL = process.env.UPSTASH_REDIS_REST_URL;
-const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-const IS_PRODUCTION = process.env.NODE_ENV === "production";
-const IS_CONFIGURED = Boolean(REST_URL && REST_TOKEN);
-
-if (!IS_CONFIGURED && IS_PRODUCTION) {
-  console.error(
-    "[rateLimit] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set. " +
-      "Rate-limited endpoints will reject all requests until they are configured.",
-  );
-}
 
 export interface RateLimitRule {
   /** Maximum number of attempts permitted inside the window. */
@@ -157,17 +152,46 @@ export const RATE_LIMITS = {
   checkoutPerSession: { limit: 20, windowMs: 60_000 },
 
   /**
-   * Web-vitals beacons per IP.
+   * Web-vitals beacons.
    *
    * `/api/metrics/vitals` is the one endpoint here that is unauthenticated
    * *and* writes to Atlas, so it is the cheapest way to burn the write
    * quota that real orders depend on. Nothing about it is worth guessing,
-   * so this is a volume cap rather than a brute-force defence.
+   * so these are volume caps rather than brute-force defences.
    *
-   * Sized against honest use: a browser flushes at most one beacon per
-   * page view, carrying up to 8 metrics. 60/minute is roughly a page view
-   * every second, sustained — far beyond a person clicking around, and
-   * still generous for several people behind one office NAT.
+   * ---------------------------------------------------------------------
+   * These are two limits for a reason. Read this before merging them.
+   * ---------------------------------------------------------------------
+   *
+   * The per-IP limit was originally the only one, at 60/minute, sized as
+   * "roughly a page view every second, which no single person exceeds".
+   * That reasoning assumed one IP meant one person. It does not here: the
+   * whole company sits behind one corporate NAT, so 60/minute was a cap on
+   * *the entire office*, and with a dozen people browsing it silently
+   * dropped honest measurements — the same mistake the OTP limits above
+   * were rescaled to fix.
+   *
+   * The split follows the same shape as `otpRequestPerIp` /
+   * `otpRequestPerEmail`: a tight limit on the actor, a loose one as the
+   * flood backstop.
+   *
+   *   perClient  keyed on a random id the reporter generates per tab and
+   *              holds in memory only. Honest use is one beacon per page
+   *              view, so 10/minute is already generous. The id is
+   *              client-supplied and therefore rotatable by an attacker,
+   *              which is exactly why the per-IP ceiling below still
+   *              exists — this limit stops honest tabs misbehaving, not
+   *              adversaries.
+   *
+   *   perIp      the real flood ceiling. Sized for a whole office rather
+   *              than one person: ~10 beacons/second sustained from a
+   *              single address is far past any plausible NAT and still
+   *              small next to the ~100 ops/sec the Atlas free tier will
+   *              take.
+   *
+   * Client-side sampling (`NEXT_PUBLIC_VITALS_SAMPLE_RATE` in
+   * components/WebVitals.tsx) is what actually keeps the write volume
+   * down. These limits are the backstop for when it is turned up.
    *
    * Note the asymmetry with the auth limits: when Redis is unreachable in
    * production this fails closed like everything else, which here means
@@ -175,7 +199,8 @@ export const RATE_LIMITS = {
    * telemetry during an outage costs a gap in a chart; admitting unmetered
    * writes during one costs the database.
    */
-  vitalsPerIp: { limit: 60, windowMs: 60_000 },
+  vitalsPerClient: { limit: 10, windowMs: 60_000 },
+  vitalsPerIp: { limit: 600, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**
@@ -209,26 +234,6 @@ redis.call('ZADD', key, now, member)
 redis.call('PEXPIRE', key, window)
 return {1, count + 1, 0}
 `;
-
-async function upstash(command: unknown[]): Promise<unknown> {
-  const res = await fetch(REST_URL as string, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${REST_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Upstash responded ${res.status}`);
-  }
-
-  const body = (await res.json()) as { result?: unknown; error?: string };
-  if (body.error) throw new Error(`Upstash error: ${body.error}`);
-  return body.result;
-}
 
 // ---------------------------------------------------------------------------
 // Development fallback: same semantics, per-process only.

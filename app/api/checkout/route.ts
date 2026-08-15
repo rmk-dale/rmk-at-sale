@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { cookies } from "next/headers";
-import { ObjectId } from "mongodb";
+import { ObjectId, type AnyBulkWriteOperation } from "mongodb";
 import { sendReceiptEmail } from "@/lib/email";
 import clientPromise, { getDb } from "@/lib/mongodb";
 import {
@@ -31,7 +31,7 @@ import {
 import {
   acquireCheckoutSlot,
   releaseCheckoutSlot,
-} from "@/lib/models/checkoutGate";
+} from "@/lib/checkoutGate";
 
 class InsufficientStockError extends Error {
   constructor(
@@ -39,6 +39,25 @@ class InsufficientStockError extends Error {
     public available: number,
   ) {
     super(`Insufficient stock for ${itemDescription}`);
+  }
+}
+
+/**
+ * Raised when the batched stock decrement matches fewer documents than it
+ * has operations.
+ *
+ * Distinct from `InsufficientStockError`, which is raised from the read a
+ * few lines earlier and can therefore name the item and the shortfall.
+ * This one means the guards in the write disagreed with that read — either
+ * another checkout took the last unit in between, or the same product
+ * appears on two cart lines that together exceed its stock. Neither case
+ * can be attributed to a specific line without another query, and buying
+ * a better error message for a rare race is not worth a round trip inside
+ * an open transaction.
+ */
+class ConcurrentStockChangeError extends Error {
+  constructor() {
+    super("Stock changed while the order was being placed");
   }
 }
 
@@ -127,6 +146,9 @@ export async function POST(req: NextRequest) {
     // free cluster together. Acquired after cheap validation (so a
     // malformed request doesn't consume a slot) and released as soon as
     // the DB work below is done, win or lose.
+    //
+    // The gate lives in Redis rather than Mongo — see lib/checkoutGate.ts
+    // for why. It costs this route zero Atlas operations.
     const leaseId = await acquireCheckoutSlot();
     if (!leaseId) {
       return NextResponse.json(
@@ -141,6 +163,14 @@ export async function POST(req: NextRequest) {
     // 6. Check stock, decrement it, and record the order — all inside one
     // transaction, so a shortfall on any single item rolls back everything,
     // and the order record can never exist without the stock it consumed.
+    //
+    // The transaction is deliberately kept short. Write-conflict
+    // probability scales with how long a transaction stays open, and
+    // `withTransaction` resolves a conflict by retrying *everything* — so
+    // each round trip removed from in here is worth more than its own
+    // cost. What remains is four operations regardless of cart size: the
+    // daily-cap read, one batched product read, one batched stock write,
+    // and the order insert.
     const client = await clientPromise;
     const db = await getDb();
     const products = db.collection<ProductDoc>("products");
@@ -151,6 +181,15 @@ export async function POST(req: NextRequest) {
     const purchasedItems: OrderItem[] = [];
 
     try {
+      // Allocated before the transaction opens, not inside it. Every
+      // checkout increments the same counter document, so doing it in the
+      // transaction made concurrent checkouts conflict and retry each
+      // other's entire body. The trade is that a checkout which later
+      // fails on stock burns a number and leaves a gap in the sequence.
+      // See `nextOrderNumber` in lib/models/order.ts for the full
+      // reasoning.
+      orderNumber = await nextOrderNumber(db);
+
       const mongoSession = client.startSession();
       try {
         await mongoSession.withTransaction(async () => {
@@ -191,11 +230,29 @@ export async function POST(req: NextRequest) {
             throw new DailyOrderLimitError(recent.length);
           }
 
-          for (const { id, quantity, color, size } of items) {
-            const product = await products.findOne(
-              { _id: id },
+          // Every product on the cart, in one query.
+          //
+          // This replaced a `findOne` per cart line. The loop below then
+          // runs with no round trips in it at all, which is what makes the
+          // transaction's cost independent of how many items someone
+          // bought.
+          const cartProducts = await products
+            .find(
+              { _id: { $in: items.map((item) => item.id) } },
               { session: mongoSession },
-            );
+            )
+            .toArray();
+          const productsById = new Map(
+            cartProducts.map((doc) => [doc._id, doc]),
+          );
+
+          // Stock decrements are accumulated here and sent as one write
+          // once every line has been validated and priced.
+          const stockOps: AnyBulkWriteOperation<ProductDoc>[] = [];
+          const writtenAt = new Date();
+
+          for (const { id, quantity, color, size } of items) {
+            const product = productsById.get(id);
 
             if (!product) {
               throw new InsufficientStockError(id, 0);
@@ -244,6 +301,13 @@ export async function POST(req: NextRequest) {
 
             const itemPrice = activeVariant ? activeVariant.price : product.price;
 
+            // Two checks guard every decrement, and they do different
+            // jobs. The one here reads the snapshot fetched above, so it
+            // can name the item and say how many are left — that is what
+            // produces a useful message for the shopper. The `$gte` in
+            // each filter below is the authoritative one: it is evaluated
+            // by the server at write time, so stock can never go negative
+            // even if the snapshot was a moment stale.
             if (activeVariant) {
               if (activeVariant.stock < quantity) {
                 throw new InsufficientStockError(
@@ -251,14 +315,18 @@ export async function POST(req: NextRequest) {
                   activeVariant.stock
                 );
               }
-              await products.updateOne(
-                { _id: id },
-                { 
-                  $inc: { [`variants.${activeVariantIndex}.stock`]: -quantity },
-                  $set: { updatedAt: new Date() }
+              stockOps.push({
+                updateOne: {
+                  filter: {
+                    _id: id,
+                    [`variants.${activeVariantIndex}.stock`]: { $gte: quantity },
+                  },
+                  update: {
+                    $inc: { [`variants.${activeVariantIndex}.stock`]: -quantity },
+                    $set: { updatedAt: writtenAt },
+                  },
                 },
-                { session: mongoSession }
-              );
+              } as AnyBulkWriteOperation<ProductDoc>);
             } else {
               if (product.stock < quantity) {
                 throw new InsufficientStockError(
@@ -266,14 +334,15 @@ export async function POST(req: NextRequest) {
                   product.stock
                 );
               }
-              await products.updateOne(
-                { _id: id },
-                { 
-                  $inc: { stock: -quantity },
-                  $set: { updatedAt: new Date() }
+              stockOps.push({
+                updateOne: {
+                  filter: { _id: id, stock: { $gte: quantity } },
+                  update: {
+                    $inc: { stock: -quantity },
+                    $set: { updatedAt: writtenAt },
+                  },
                 },
-                { session: mongoSession }
-              );
+              } as AnyBulkWriteOperation<ProductDoc>);
             }
 
             totalAmount += itemPrice * quantity;
@@ -289,8 +358,26 @@ export async function POST(req: NextRequest) {
             });
           }
 
+          // Every stock decrement on the order, in one write.
+          //
+          // `ordered: true` matters when the same product appears on two
+          // cart lines — different colours of one bag, say, that both fall
+          // back to product-level stock. Ordered application means the
+          // second line's `$gte` guard sees the first line's decrement, so
+          // two lines cannot between them take more stock than exists.
+          const stockResult = await products.bulkWrite(stockOps, {
+            session: mongoSession,
+            ordered: true,
+          });
+
+          // A filter that didn't match means its `$gte` guard failed: the
+          // stock is no longer there. Aborting rolls back any decrement
+          // that did land, along with the order itself.
+          if (stockResult.matchedCount !== stockOps.length) {
+            throw new ConcurrentStockChangeError();
+          }
+
           const now = new Date();
-          orderNumber = await nextOrderNumber(db, mongoSession);
 
           await orders.insertOne(
             {
@@ -323,6 +410,15 @@ export async function POST(req: NextRequest) {
               ? `Only ${err.available} left of ${err.itemDescription}.`
               : `${err.itemDescription} is out of stock.`;
           return NextResponse.json({ error: message }, { status: 409 });
+        }
+        if (err instanceof ConcurrentStockChangeError) {
+          return NextResponse.json(
+            {
+              error:
+                "Someone just bought the last of something in your cart. Please refresh and try again.",
+            },
+            { status: 409 },
+          );
         }
         if (err instanceof InvalidVariantError) {
           return NextResponse.json({ error: err.detail }, { status: 400 });

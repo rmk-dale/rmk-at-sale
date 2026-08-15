@@ -16,7 +16,10 @@
     "check:gate": "node --experimental-strip-types scripts/check-gate.ts",
     "check:admin-cache": "node --experimental-strip-types scripts/check-admin-cache.ts",
     "check:security": "node --experimental-strip-types scripts/security-checks.ts",
-    "migrate:orders": "node --experimental-strip-types scripts/migrate-orders.ts"
+    "migrate:orders": "node --experimental-strip-types scripts/migrate-orders.ts",
+    "migrate:images": "node --experimental-strip-types scripts/migrate-image-paths.ts",
+    "check:photos": "node --experimental-strip-types scripts/check-photo-buckets.ts",
+    "check:payload": "node --experimental-strip-types scripts/check-product-payload.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

@@ -28,6 +28,15 @@ interface AdminOrder {
     color?: string;
     size?: string;
   }[];
+  /**
+   * Line total before the bundle rules, and what those rules took off.
+   *
+   * Both optional: orders placed before the bundle rules shipped carry
+   * neither, and `total` was the whole story for them. Never assume they
+   * are present — `subtotal ?? total` is the safe read.
+   */
+  subtotal?: number;
+  bundleDiscount?: number;
   total: number;
   status: OrderStatus;
   stockReleased?: boolean;
@@ -230,9 +239,21 @@ export default function AdminOrdersPage() {
                   >
                     {order.status}
                   </span>
-                  <span className="text-zinc-900 font-semibold">
-                    ₱{order.total.toFixed(2)}
-                  </span>
+                  {/* The discount is shown next to the total rather than
+                      folded into the line prices below, so `price × qty`
+                      on each row still reconciles against what the
+                      customer was quoted. */}
+                  <div className="text-right">
+                    <span className="text-zinc-900 font-semibold block">
+                      ₱{order.total.toFixed(2)}
+                    </span>
+                    {!!order.bundleDiscount && order.bundleDiscount > 0 && (
+                      <span className="block text-xs text-emerald-600">
+                        ₱{(order.subtotal ?? order.total).toFixed(2)} − ₱
+                        {order.bundleDiscount.toFixed(2)} bundle
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

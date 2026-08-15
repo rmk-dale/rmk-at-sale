@@ -10,8 +10,13 @@ import {
   ShoppingBag,
   Trash2,
 } from "lucide-react";
-import { useCartStore, cartLineKey, type CartItem } from "@/lib/store";
-import { MAX_QUANTITY_PER_LINE } from "@/lib/validation";
+import { useCartStore, cartLineId, type CartItem } from "@/lib/store";
+import {
+  BUNDLE_SIZE,
+  MAX_QUANTITY_PER_LINE,
+  MIN_UNITS_PER_PRODUCT,
+  type BundleGroup,
+} from "@/lib/validation";
 // From lib/productImages, not lib/models/product: that module imports
 // getDb, so a value import from it would pull the MongoDB driver into the
 // client bundle. The type import below is erased and stays safe.
@@ -24,6 +29,17 @@ interface CartLineProps {
   product?: PublicProduct;
   /** `compact` is the drawer; `full` is the cart page. */
   variant?: "compact" | "full";
+  /**
+   * The bundle standing of this line's *product*, counting every line of
+   * it in the cart. Passed in rather than derived here because the rule is
+   * about the whole cart and a line only ever sees itself.
+   */
+  group?: BundleGroup;
+  /**
+   * Whether this line renders the group's notice. True for one line per
+   * product — see `groupLeadLineIds` in lib/store.ts.
+   */
+  showGroupNotice?: boolean;
 }
 
 /**
@@ -40,12 +56,14 @@ export default function CartLine({
   item,
   product,
   variant = "compact",
+  group,
+  showGroupNotice = false,
 }: CartLineProps) {
   const { updateQuantity, removeItem, addItem } = useCartStore();
   const [editing, setEditing] = useState(false);
 
   const compact = variant === "compact";
-  const lineId = item.cartItemId ?? cartLineKey(item.id, item.color, item.size);
+  const lineId = cartLineId(item);
 
   const colorObj = product?.colors?.find((c) => c.name === item.color);
   const currentVariant = product?.variants?.find(
@@ -201,6 +219,46 @@ export default function CartLine({
             added this.
           </p>
         )}
+
+        {/*
+          The bundle notices. Rendered on one line per product — the group
+          spans every line of it, so repeating this under each size would
+          say the same thing three times.
+
+          The three states are mutually exclusive by construction: a group
+          is either below the minimum, sitting exactly on a bundle, or
+          neither. Note that `toBundle` is 0 for a group past three, so a
+          shopper holding four is never told to buy more; telling them to
+          buy *less* to qualify is a conversation this cart doesn't start.
+        */}
+        {showGroupNotice && group && !group.meetsMinimum && (
+          <p className="flex items-start gap-1.5 text-xs text-primary font-medium mt-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+            <span>
+              Minimum {MIN_UNITS_PER_PRODUCT} pieces of this item. Add{" "}
+              {group.shortfall} more — any size or colour counts.
+            </span>
+          </p>
+        )}
+        {showGroupNotice && group?.discounted && (
+          <p className="flex items-start gap-1.5 text-xs text-emerald-700 font-medium mt-1.5">
+            <Check className="w-3.5 h-3.5 shrink-0 mt-px" />
+            <span>
+              {BUNDLE_SIZE}-piece bundle — 5% off, saving ₱
+              {group.discount.toFixed(2)}
+            </span>
+          </p>
+        )}
+        {showGroupNotice &&
+          group &&
+          group.meetsMinimum &&
+          !group.discounted &&
+          group.toBundle > 0 && (
+            <p className="text-xs text-muted mt-1.5">
+              Add {group.toBundle} more to make it a {BUNDLE_SIZE}-piece bundle
+              and save 5%.
+            </p>
+          )}
 
         {editing && product && (
           <div className="mt-3 p-3 rounded-xl bg-background border border-border space-y-3">

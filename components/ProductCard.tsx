@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ShoppingBag, Plus } from "lucide-react";
 import type { CartItem } from "@/lib/store";
+import { MIN_UNITS_PER_PRODUCT } from "@/lib/validation";
 import type { ColorVariant } from "@/lib/models/product";
 
 export interface CardProduct {
@@ -110,9 +111,43 @@ export default function ProductCard({
     : undefined;
 
   const soldOut = displayStock <= 0;
+
+  /*
+    Every unit of this product across the whole matrix, not just the
+    highlighted colour.
+
+    The minimum is per product and can be met by mixing colours, so a
+    colour down to its last unit is not a reason to refuse — the shopper
+    can take another. Only a product whose entire matrix holds fewer than
+    the minimum can never form a legal order, and it is better to say so
+    on the card than to let someone add a line that checkout will reject.
+  */
+  const productTotalStock = hasVariants
+    ? product.variants!.reduce((sum, v) => sum + Math.max(0, v.stock), 0)
+    : product.stock;
+  const enoughStockForMinimum = productTotalStock >= MIN_UNITS_PER_PRODUCT;
+
   // A product with variants that resolves to none is a data problem (a
   // renamed colour, a stale matrix). Refuse rather than guess a price.
-  const canAdd = !hasSizes && !soldOut && (!hasVariants || !!addableVariant);
+  const canAdd =
+    !hasSizes &&
+    !soldOut &&
+    enoughStockForMinimum &&
+    (!hasVariants || !!addableVariant);
+
+  /*
+    How many this button actually adds.
+
+    The minimum, unless the selected colour cannot supply it — a colour
+    with one unit left, on a product whose other colours make up the rest.
+    `addItem` would clamp to the variant's stock anyway; computing it here
+    means the label can say the true number instead of promising two and
+    quietly delivering one.
+  */
+  const addQuantity = Math.min(
+    MIN_UNITS_PER_PRODUCT,
+    Math.max(1, addableVariant?.stock ?? product.stock),
+  );
 
   const href = `/product/${product.id}`;
 
@@ -131,7 +166,11 @@ export default function ProductCard({
       image,
       color: selectedColor?.name,
       variantStock: addableVariant?.stock ?? product.stock,
-      quantity: 1,
+      // The minimum, not 1. A card has no quantity control, so adding a
+      // single unit from here would build a cart the shopper then has to
+      // be told is invalid — with no obvious way to see why, since the
+      // card gave them no say in the number.
+      quantity: addQuantity,
     });
   };
 
@@ -275,8 +314,14 @@ export default function ProductCard({
             onClick={handleAdd}
             className="relative z-10 w-full flex items-center justify-center gap-2 bg-primary text-white py-2.5 rounded-xl font-medium text-sm hover:bg-primary-hover transition-all duration-300 transform active:scale-95 motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100"
           >
-            {!soldOut && <Plus className="w-4 h-4" />}
-            {soldOut ? "Sold out" : canAdd ? "Add to cart" : "Unavailable"}
+            {!soldOut && canAdd && <Plus className="w-4 h-4" />}
+            {soldOut
+              ? "Sold out"
+              : canAdd
+                ? `Add ${addQuantity} to cart`
+                : !enoughStockForMinimum
+                  ? "Not enough stock"
+                  : "Unavailable"}
           </button>
         )}
       </div>

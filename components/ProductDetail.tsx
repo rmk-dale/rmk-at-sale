@@ -74,8 +74,16 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
   // to the base fields hid a renamed colour behind a plausible price.
   const variantResolved = !hasVariants || !!activeVariant;
   const displayPrice = activeVariant ? activeVariant.price : product.price;
-  const displayOriginalPrice =
-    activeVariant?.originalPrice ?? product.originalPrice;
+  // No `?? product.originalPrice` here. A variant with no original price is
+  // simply not on sale, and `product.originalPrice` is an aggregate — the
+  // admin form derives it as the max across whichever variants have one
+  // (ProductForm computedOriginalPrice). Falling back to it meant one
+  // discounted cell painted a strike-through and a −X% ribbon onto every
+  // other size and colour, and rode into the cart line below.
+  // Same rule as price: with a matrix present, the matrix decides.
+  const displayOriginalPrice = hasVariants
+    ? activeVariant?.originalPrice
+    : product.originalPrice;
   const displayStock = activeVariant ? activeVariant.stock : product.stock;
 
   const heroImage =

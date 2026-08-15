@@ -54,8 +54,8 @@ function parseVariants(input: unknown): import("@/lib/models/product").ProductVa
   const variants: import("@/lib/models/product").ProductVariant[] = [];
   for (const entry of input) {
     if (typeof entry !== "object" || entry === null) return null;
-    const { color, size, price, originalPrice, stock } = entry as Record<string, unknown>;
-    
+    const { color, size, price, originalPrice, stock, image } = entry as Record<string, unknown>;
+
     if (typeof price !== "number" || !Number.isFinite(price) || price < 0) return null;
     if (originalPrice !== undefined && originalPrice !== null && (typeof originalPrice !== "number" || !Number.isFinite(originalPrice) || originalPrice < 0)) return null;
     if (typeof stock !== "number" || stock < 0 || !Number.isInteger(stock)) return null;
@@ -66,6 +66,11 @@ function parseVariants(input: unknown): import("@/lib/models/product").ProductVa
       price,
       originalPrice: originalPrice === null ? undefined : originalPrice as number | undefined,
       stock,
+      // Optional per-combination photo. Narrowed the same way `parseColors`
+      // narrows `hoverImage`: a non-string is dropped rather than rejected,
+      // so a client that omits it saves a variant without a photo instead
+      // of failing the whole write.
+      image: typeof image === "string" && image ? image : undefined,
     });
   }
   return variants;

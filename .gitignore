@@ -40,5 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# rendered output of `npm run preview:emails` — regenerate, don't commit
+# local scratch — email previews, repo snapshots, files parked for deletion
 /email-preview/
+/repo-snapshot.tgz
+/email-original-snapshot.ts
+/public/_to_delete/

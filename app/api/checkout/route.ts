@@ -210,15 +210,6 @@ export async function POST(req: NextRequest) {
     let orderNumber = "";
     const purchasedItems: OrderItem[] = [];
 
-    // Which products earned the 5%, for the receipt. Ids drive the badge
-    // on each line; names drive the "5% off <product>" on the discount
-    // row. Both are captured inside the transaction, where the grouped
-    // result and the product documents are in scope — a line cannot work
-    // this out for itself, because three units split across two sizes
-    // qualify and neither line alone looks like it should.
-    let bundledProductIds = new Set<string>();
-    let bundledProductNames: string[] = [];
-
     try {
       // Allocated before the transaction opens, not inside it. Every
       // checkout increments the same counter document, so doing it in the
@@ -238,8 +229,6 @@ export async function POST(req: NextRequest) {
           bundleDiscount = 0;
           totalAmount = 0;
           purchasedItems.length = 0;
-          bundledProductIds = new Set<string>();
-          bundledProductNames = [];
 
           // Daily order cap, counted inside the transaction.
           //
@@ -437,15 +426,6 @@ export async function POST(req: NextRequest) {
           bundleDiscount = bundles.discount;
           totalAmount = bundles.total;
 
-          for (const group of bundles.groups) {
-            if (!group.discounted) continue;
-            bundledProductIds.add(group.id);
-            const doc = productsById.get(group.id);
-            bundledProductNames.push(
-              doc?.name || doc?.description || "an item",
-            );
-          }
-
           // Every stock decrement on the order, in one write.
           //
           // `ordered: true` matters when the same product appears on two
@@ -565,14 +545,12 @@ export async function POST(req: NextRequest) {
       price: item.price,
       color: item.color,
       size: item.size,
-      bundled: bundledProductIds.has(item.itemCode),
     }));
     const receiptTotal = totalAmount;
     const receiptOrderNumber = orderNumber;
     const receiptBreakdown = {
       subtotal: subtotalAmount,
       bundleDiscount,
-      bundledNames: bundledProductNames,
     };
 
     after(async () => {

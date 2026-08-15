@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useCartStore } from "@/lib/store";
+import { MAX_QUANTITY_PER_LINE } from "@/lib/validation";
 import { ArrowLeft, Check, Minus, Plus, ShoppingBag } from "lucide-react";
 import type { ColorVariant, PublicProduct } from "@/lib/models/product";
 
@@ -24,6 +25,13 @@ function isLightColor(hex?: string): boolean {
  * The product is resolved on the server and passed in, so colour, size and
  * quantity state can be initialised correctly on the first render instead
  * of being corrected by an effect once a fetch resolves.
+ *
+ * The colour and size chosen here are the sole basis for the cart line:
+ * they resolve to exactly one ProductVariant, and that variant supplies
+ * the price, the original price and the stock ceiling. There is no path
+ * from this page to the cart that reads `product.price` — that field is
+ * `min(variants.price)` and is only meaningful as a "From ₱X" display
+ * value on the listing.
  */
 export default function ProductDetail({ product }: { product: PublicProduct }) {
   const router = useRouter();
@@ -35,9 +43,15 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
   const [selectedColor, setSelectedColor] = useState<ColorVariant | null>(
     defaultColor,
   );
-  const [selectedSize, setSelectedSize] = useState<string | null>(
-    product.sizes?.[0] ?? null,
-  );
+  /*
+    Deliberately null, even when the product has sizes.
+
+    This used to default to `sizes[0]`, so a shopper who never looked at
+    the size row still got a size on their order — at that size's price,
+    which they had never seen, and possibly with no stock behind it. A
+    size is a decision, so it has to be made rather than inherited.
+  */
+  const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [activeImage, setActiveImage] = useState<string | null>(
     defaultColor?.image || product.image || null,
   );
@@ -49,32 +63,70 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
     selectedColor?.hoverImage || product.hoverImage,
   ].filter(Boolean) as string[];
 
+  const hasSizes = (product.sizes?.length ?? 0) > 0;
+  const hasVariants = (product.variants?.length ?? 0) > 0;
+  const sizeChosen = !hasSizes || selectedSize !== null;
+
   const activeVariant = product.variants?.find(
     (v) =>
-      (v.color === selectedColor?.name || (!v.color && !selectedColor)) &&
-      (v.size === selectedSize || (!v.size && !selectedSize))
+      (v.color ?? undefined) === (selectedColor?.name ?? undefined) &&
+      (v.size ?? undefined) === (selectedSize ?? undefined),
   );
 
+  /*
+    When a product has a variant matrix, that matrix is the source of
+    truth — falling back to the base fields hides the failure. A colour
+    renamed without regenerating the matrix used to leave `activeVariant`
+    undefined, at which point the page quoted `product.price` for a
+    combination that does not exist and let it be added anyway.
+  */
+  const variantResolved = !hasVariants || !!activeVariant;
   const displayPrice = activeVariant ? activeVariant.price : product.price;
-  const displayOriginalPrice = activeVariant?.originalPrice ?? product.originalPrice;
+  const displayOriginalPrice =
+    activeVariant?.originalPrice ?? product.originalPrice;
   const displayStock = activeVariant ? activeVariant.stock : product.stock;
 
+  const canAdd = sizeChosen && variantResolved && displayStock > 0;
+  // The stepper stops where the shopper's order would stop being fillable.
+  // MAX_QUANTITY_PER_LINE is the same limit /api/checkout enforces, so the
+  // ceiling is no longer discovered on the last screen.
+  const maxQuantity = Math.max(
+    1,
+    Math.min(displayStock, MAX_QUANTITY_PER_LINE),
+  );
+  // Derived rather than clamped in state: switching to a size with less
+  // stock lowers the effective figure without stranding the shopper's
+  // original intent if they switch back.
+  const effectiveQuantity = Math.min(quantity, maxQuantity);
+
   const handleAddToCart = () => {
-    for (let i = 0; i < quantity; i++) {
-      addItem({
-        id: product.id,
-        name: product.name,
-        price: displayPrice,
-        originalPrice: displayOriginalPrice,
-        image: selectedColor?.image || product.image,
-        quantity: 1,
-        color: selectedColor?.name,
-        size: selectedSize || undefined,
-      });
-    }
+    if (!canAdd) return;
+    // Once, with the real quantity. This used to loop `quantity` times,
+    // because the store ignored the quantity it was handed.
+    addItem({
+      id: product.id,
+      name: product.name,
+      price: displayPrice,
+      originalPrice: displayOriginalPrice,
+      image: selectedColor?.image || product.image,
+      quantity: effectiveQuantity,
+      color: selectedColor?.name,
+      size: selectedSize || undefined,
+      variantStock: displayStock,
+    });
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
   };
+
+  const buttonLabel = !sizeChosen
+    ? "Select a size"
+    : !variantResolved
+      ? "Unavailable"
+      : displayStock <= 0
+        ? "Out of stock"
+        : added
+          ? "Added to cart"
+          : "Add to cart";
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
@@ -228,7 +280,15 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
 
           {product.sizes && product.sizes.length > 0 && (
             <div className="mb-6">
-              <p className="text-sm font-medium text-foreground mb-3">Size</p>
+              <p className="text-sm font-medium text-foreground mb-3">
+                Size
+                {!selectedSize && (
+                  <span className="text-muted font-normal">
+                    {" "}
+                    — please choose
+                  </span>
+                )}
+              </p>
               <div className="flex flex-wrap gap-2">
                 {product.sizes.map((size) => {
                   const isSelected = selectedSize === size;
@@ -256,35 +316,42 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
             <span className="text-sm font-medium text-foreground">Quantity</span>
             <div className="flex items-center gap-4 bg-background rounded-full px-4 py-2 border border-border">
               <button
-                onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                onClick={() => setQuantity(Math.max(1, effectiveQuantity - 1))}
+                disabled={effectiveQuantity <= 1}
                 aria-label="Decrease quantity"
-                className="p-1 text-muted hover:text-primary transition-colors"
+                className="p-1 text-muted hover:text-primary transition-colors disabled:opacity-30 disabled:hover:text-muted"
               >
                 <Minus className="w-4 h-4" />
               </button>
               <span className="w-4 text-center font-medium text-foreground tabular-nums">
-                {quantity}
+                {effectiveQuantity}
               </span>
               <button
-                onClick={() => setQuantity((q) => q + 1)}
+                onClick={() =>
+                  setQuantity(Math.min(maxQuantity, effectiveQuantity + 1))
+                }
+                disabled={effectiveQuantity >= maxQuantity}
                 aria-label="Increase quantity"
-                className="p-1 text-muted hover:text-primary transition-colors"
+                className="p-1 text-muted hover:text-primary transition-colors disabled:opacity-30 disabled:hover:text-muted"
               >
                 <Plus className="w-4 h-4" />
               </button>
             </div>
+            {canAdd && effectiveQuantity >= maxQuantity && (
+              <span className="text-xs text-muted">
+                {displayStock <= MAX_QUANTITY_PER_LINE
+                  ? `Only ${displayStock} available`
+                  : `Max ${MAX_QUANTITY_PER_LINE} per item`}
+              </span>
+            )}
           </div>
 
           <button
-            disabled={displayStock <= 0}
+            disabled={!canAdd}
             onClick={handleAddToCart}
             className="w-full bg-primary text-white py-3.5 rounded-xl font-medium hover:bg-primary-hover transition-all transform active:scale-95 motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100"
           >
-            {displayStock <= 0
-              ? "Out of stock"
-              : added
-                ? "Added to cart"
-                : "Add to cart"}
+            {buttonLabel}
           </button>
         </div>
       </div>

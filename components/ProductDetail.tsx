@@ -86,8 +86,25 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
     : product.originalPrice;
   const displayStock = activeVariant ? activeVariant.stock : product.stock;
 
+  /*
+    Resolved from `activeVariant` directly rather than through
+    `resolveVariantImage`, even though that helper implements the same chain.
+    The helper re-finds the variant by colour and size; this component already
+    holds the one it resolved for price and stock, and reading the photo off a
+    *different* lookup is how a page ends up quoting one variant's price beside
+    another variant's photograph. One lookup, one variant, everything on screen
+    describes the same cell.
+
+    The two photos are resolved independently, not as a pair: a variant with
+    its own main shot but no second shot still borrows the colour's second
+    shot, rather than losing the hover behaviour altogether.
+  */
   const heroImage =
     activeVariant?.image || selectedColor?.image || product.image;
+  const heroHoverImage =
+    activeVariant?.hoverImage ||
+    selectedColor?.hoverImage ||
+    product.hoverImage;
 
   const canAdd = sizeChosen && variantResolved && displayStock > 0;
   const maxQuantity = Math.max(1, Math.min(displayStock, MAX_QUANTITY_PER_LINE));
@@ -140,13 +157,41 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
         </button>
 
         <div className="grid lg:grid-cols-2 gap-10 items-start">
+          {/*
+            Most-specific-first, and every entry the hero can show is present:
+            the hover photo is only a hover on a pointer device, so the rail is
+            what makes it reachable by tap and by keyboard. The gallery drops
+            duplicates and keeps the first label given for each file.
+          */}
           <ProductGallery
             name={product.name}
             hero={heroImage}
+            heroHover={heroHoverImage}
             thumbnails={[
-              activeVariant?.image,
-              selectedColor?.image || product.image,
-              selectedColor?.hoverImage || product.hoverImage,
+              {
+                src: activeVariant?.image,
+                label: selectedSize
+                  ? `${selectedSize} — main photo`
+                  : "Main photo",
+              },
+              {
+                src: activeVariant?.hoverImage,
+                label: selectedSize
+                  ? `${selectedSize} — second photo`
+                  : "Second photo",
+              },
+              {
+                src: selectedColor?.image || product.image,
+                label: selectedColor
+                  ? `${selectedColor.name} — main photo`
+                  : "Main photo",
+              },
+              {
+                src: selectedColor?.hoverImage || product.hoverImage,
+                label: selectedColor
+                  ? `${selectedColor.name} — second photo`
+                  : "Second photo",
+              },
             ]}
           />
 

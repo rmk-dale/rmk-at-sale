@@ -59,9 +59,12 @@ export default function VariantMatrixEditor({
     above imply.
 
     The important detail is that an existing row is carried over whole
-    rather than rebuilt. A row now holds a photo, so regenerating it from
+    rather than rebuilt. A row now holds two photos, so regenerating it from
     scratch on an unrelated change — adding a fourth size, say — would
-    silently wipe every photo already assigned.
+    silently wipe every photo already assigned. `byKey.get` returning the
+    original object is what protects them, and it is why adding a field to
+    ProductVariant needs no change here: whole-object reuse carries anything
+    new along for free.
   */
   useEffect(() => {
     if (expectedCombinations.length === 0) {
@@ -78,6 +81,8 @@ export default function VariantMatrixEditor({
           price: 0,
           originalPrice: undefined,
           stock: 0,
+          image: undefined,
+          hoverImage: undefined,
         },
     );
 
@@ -123,11 +128,28 @@ export default function VariantMatrixEditor({
     );
   };
 
-  /** Copies a colour's own photo onto each of its sizes. */
+  /**
+   * Copies a colour's own photos onto each of its sizes.
+   *
+   * Both photos, not just the main one. Copying `image` alone left every row's
+   * hover empty, so the storefront fell back to the colour's hover for the
+   * main photo's partner — a mismatched pair that looked like a bug in the
+   * gallery rather than an unfinished bulk action.
+   *
+   * Only fills blanks. A row that already has its own photo is left alone, so
+   * this is safe to press after hand-picking a few sizes; it finishes the job
+   * instead of undoing it.
+   */
   const applyColorPhoto = (color: ColorVariant) => {
     onChange(
       variants.map((v) =>
-        v.color === color.name ? { ...v, image: color.image } : v,
+        v.color === color.name
+          ? {
+              ...v,
+              image: v.image || color.image,
+              hoverImage: v.hoverImage || color.hoverImage,
+            }
+          : v,
       ),
     );
   };
@@ -202,7 +224,14 @@ export default function VariantMatrixEditor({
       {grouped.map(({ color, rows }) => {
         const groupKey = color?.name ?? "__nocolor__";
         const isCollapsed = collapsed[groupKey];
+        // Two different counts on purpose. `missingPhotos` drives the "needs
+        // photos" warning and counts only missing *mains*, because a hover is
+        // genuinely optional and warning about it would train admins to ignore
+        // the warning. `blankSlots` drives the bulk button, which fills both.
         const missingPhotos = rows.filter((r) => !r.image).length;
+        const blankSlots = rows.filter(
+          (r) => !r.image || (!r.hoverImage && !!color?.hoverImage),
+        ).length;
 
         return (
           <div key={groupKey} className="border-b border-border last:border-b-0">
@@ -235,14 +264,15 @@ export default function VariantMatrixEditor({
 
                 <div className="flex-1" />
 
-                {color.image && missingPhotos > 0 && (
+                {(color.image || color.hoverImage) && blankSlots > 0 && (
                   <button
                     type="button"
                     onClick={() => applyColorPhoto(color)}
+                    title="Only fills empty slots — photos you already picked are kept"
                     className="flex items-center gap-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 border border-border rounded-lg px-2.5 py-1.5 transition-colors"
                   >
                     <Copy className="w-3 h-3" />
-                    Use this photo for all {rows.length}
+                    Fill {blankSlots} blank{blankSlots === 1 ? "" : "s"} with this colour&apos;s photos
                   </button>
                 )}
               </div>
@@ -250,6 +280,24 @@ export default function VariantMatrixEditor({
 
             {!isCollapsed && (
               <div className="divide-y divide-border bg-white">
+                {/* Column legend. Two 44px thumbnails side by side are
+                    ambiguous without it — the first row of the matrix should
+                    not be where an admin discovers which one is the hover. */}
+                <div
+                  aria-hidden="true"
+                  className="flex items-center gap-3 px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400"
+                >
+                  <span className="shrink-0 flex items-center gap-1.5">
+                    <span className="w-11 text-center">Main</span>
+                    <span className="w-11 text-center">Hover</span>
+                  </span>
+                  <span className="w-20 shrink-0">Size</span>
+                  <span className="flex-1 min-w-0 text-right">Original</span>
+                  <span className="flex-1 min-w-0 text-right">Price</span>
+                  <span className="w-20 shrink-0 text-right">Stock</span>
+                  <span className="w-16 shrink-0" />
+                </div>
+
                 {rows.map((variant) => {
                   const rowLabel =
                     [variant.color, variant.size].filter(Boolean).join(" ") ||
@@ -259,13 +307,26 @@ export default function VariantMatrixEditor({
                       key={keyOf(variant.color, variant.size)}
                       className="flex items-center gap-3 px-4 py-2.5"
                     >
-                      <PhotoField
-                        value={variant.image}
-                        onChange={(path) =>
-                          patch(variant.color, variant.size, { image: path })
-                        }
-                        label={`Photo for ${rowLabel}`}
-                      />
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <PhotoField
+                          value={variant.image}
+                          onChange={(path) =>
+                            patch(variant.color, variant.size, { image: path })
+                          }
+                          label={`main photo for ${rowLabel}`}
+                          sizeLabel={variant.size}
+                          allSizes={sizes}
+                        />
+                        <PhotoField
+                          value={variant.hoverImage}
+                          onChange={(path) =>
+                            patch(variant.color, variant.size, { hoverImage: path })
+                          }
+                          label={`hover photo for ${rowLabel}`}
+                          sizeLabel={variant.size}
+                          allSizes={sizes}
+                        />
+                      </div>
 
                       <div className="w-20 shrink-0 text-sm font-medium text-zinc-900">
                         {variant.size || rowLabel}

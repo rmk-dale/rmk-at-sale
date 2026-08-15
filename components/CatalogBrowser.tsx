@@ -36,8 +36,8 @@ const SLIDES = [
     src: "/home-image.png",
     alt: `${CAMPAIGN.name}: ${CAMPAIGN.offer}. ${CAMPAIGN.window}.`,
   },
-  { src: "/homeimage2.png", alt: "American Tourister sale — featured luggage" },
-  { src: "/homeimage3.png", alt: "American Tourister sale — bundle offers" },
+  { src: "/homeimage1.png", alt: "American Tourister sale — featured luggage" },
+  { src: "/homeimage2.png", alt: "American Tourister sale — bundle offers" },
 ];
 
 /**

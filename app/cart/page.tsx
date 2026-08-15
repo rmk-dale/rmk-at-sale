@@ -1,24 +1,32 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useCartStore } from "@/lib/store";
+import { useCatalog } from "@/lib/useCatalog";
+import CartLine from "@/components/CartLine";
 import {
-  Minus,
-  Plus,
-  Trash2,
   ArrowRight,
   CheckCircle2,
   Lock,
-  ShoppingBag,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
 
 export default function CartPage() {
-  const { items, updateQuantity, removeItem, getTotal, clearCart } =
-    useCartStore();
-  const [mounted, setMounted] = useState(false);
+  const { items, getTotal, getTotalItems, clearCart } = useCartStore();
+  /*
+    Whether the persisted cart has been read out of localStorage yet. The
+    server has no localStorage, so it must render the pre-hydration state
+    or React reports a mismatch. Subscribing to zustand's own hydration
+    signal says what is actually being waited for, where the previous
+    `mounted` flag set from an effect only approximated it — and cost a
+    second render pass on every mount.
+  */
+  const hydrated = useSyncExternalStore(
+    useCartStore.persist.onFinishHydration,
+    () => useCartStore.persist.hasHydrated(),
+    () => false,
+  );
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"CART" | "EMAIL" | "OTP" | "SUCCESS">(
@@ -31,11 +39,21 @@ export default function CartPage() {
   const [orderNumber, setOrderNumber] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Held so each line can check itself against current prices and stock:
+  // the cart persists to localStorage and can outlive what it points at.
+  const catalog = useCatalog(items.length > 0);
 
-  if (!mounted) return null;
+  // This is a sale campaign, so what the shopper is saving is worth stating
+  // rather than leaving implied by a row of strikethroughs.
+  const totalSavings = items.reduce(
+    (sum, i) =>
+      i.originalPrice !== undefined && i.originalPrice > i.price
+        ? sum + (i.originalPrice - i.price) * i.quantity
+        : sum,
+    0,
+  );
+
+  if (!hydrated) return null;
 
   const handleRequestOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,8 +72,8 @@ export default function CartPage() {
       if (!res.ok) throw new Error(data.error);
 
       setStep("OTP");
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -90,8 +108,8 @@ export default function CartPage() {
       setOrderNumber(checkoutData.orderNumber ?? "");
       clearCart();
       setStep("SUCCESS");
-    } catch (err: any) {
-      setError(err.message || "Checkout failed");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Checkout failed");
     } finally {
       setLoading(false);
     }
@@ -194,70 +212,15 @@ export default function CartPage() {
         <div className="grid lg:grid-cols-3 gap-10">
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-4">
+            {/* Same component the drawer renders, so the two views cannot
+                disagree about what a line says or what it lets you do. */}
             {items.map((item) => (
-              <div
+              <CartLine
                 key={item.cartItemId || item.id}
-                className="flex flex-col sm:flex-row items-center gap-6 bg-surface p-5 rounded-2xl border border-border relative"
-              >
-                <div className="w-20 h-20 bg-background rounded-xl flex-shrink-0 border border-border relative overflow-hidden flex items-center justify-center">
-                  {item.image ? (
-                    <Image
-                      src={item.image}
-                      alt={item.name}
-                      fill
-                      sizes="80px"
-                      className="object-cover"
-                    />
-                  ) : (
-                    <ShoppingBag className="w-8 h-8 text-border" />
-                  )}
-                </div>
-                <div className="flex-grow">
-                  <h3 className="text-base font-medium text-foreground mb-1">
-                    {item.name}
-                  </h3>
-                  {(item.color || item.size) && (
-                    <p className="text-sm text-muted mb-1">
-                      {[item.color, item.size].filter(Boolean).join(" | ")}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-2 mt-1">
-                    {item.originalPrice !== undefined && item.originalPrice > item.price && (
-                      <p className="text-sm text-muted line-through tabular-nums">
-                        ₱{item.originalPrice.toFixed(2)}
-                      </p>
-                    )}
-                    <p className="text-muted font-medium text-sm tabular-nums">
-                      ₱{item.price.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 bg-background rounded-full px-4 py-2 border border-border">
-                  <button
-                    onClick={() => updateQuantity(item.cartItemId!, item.quantity - 1)}
-                    className="p-1 text-muted hover:text-primary transition-colors"
-                  >
-                    <Minus className="w-4 h-4" />
-                  </button>
-                  <span className="w-4 text-center font-medium text-foreground">
-                    {item.quantity}
-                  </span>
-                  <button
-                    onClick={() => updateQuantity(item.cartItemId!, item.quantity + 1)}
-                    className="p-1 text-muted hover:text-primary transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => removeItem(item.cartItemId!)}
-                  className="p-3 text-muted hover:text-primary hover:bg-primary/5 rounded-full transition-all"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </div>
+                item={item}
+                product={catalog?.find((p) => p.id === item.id)}
+                variant="full"
+              />
             ))}
           </div>
 
@@ -268,9 +231,20 @@ export default function CartPage() {
                 Order summary
               </h2>
 
+              <div className="flex justify-between items-baseline mb-2 text-sm">
+                <span className="text-muted">
+                  {getTotalItems()} item{getTotalItems() === 1 ? "" : "s"}
+                </span>
+                {totalSavings > 0 && (
+                  <span className="text-emerald-700 tabular-nums">
+                    You save ₱{totalSavings.toFixed(2)}
+                  </span>
+                )}
+              </div>
+
               <div className="flex justify-between items-center mb-6">
                 <span className="text-muted">Total</span>
-                <span className="text-foreground font-semibold text-2xl">
+                <span className="text-foreground font-semibold text-2xl tabular-nums">
                   ₱{getTotal().toFixed(2)}
                 </span>
               </div>

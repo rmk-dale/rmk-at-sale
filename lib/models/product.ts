@@ -9,16 +9,34 @@ export interface ColorVariant {
   isDefault?: boolean; // this color's photo is used as the product's main image/hoverImage
 }
 
+/**
+ * One cell of the colour × size matrix: the price, stock and photo for a
+ * specific combination.
+ *
+ * `image` lives here rather than on a size, because a size does not have
+ * one appearance — Sporty Blue at 55cm and Deep Red at 55cm are different
+ * photographs. This is the only place in the schema that names a colour and
+ * a size together, so it is the only place that photo can go.
+ *
+ * It is optional, and display resolution falls back variant → colour →
+ * product, so a document whose variants predate this field renders exactly
+ * as it did before. That is also why `sizes` below stays a plain
+ * `string[]`: nothing about a size in isolation changed.
+ */
 export interface ProductVariant {
   color?: string; // Must match one of the colors, or undefined if product has no colors
   size?: string;  // Must match one of the sizes, or undefined if product has no sizes
   price: number;
   originalPrice?: number;
   stock: number;
+  image?: string; // path into public/items/ — this colour, at this size
 }
 
 export interface ProductDoc {
-  _id: string; // Item Code, e.g. "AT88G01001"
+  // A generated ObjectId hex, assigned on insert. Deliberately not a
+  // human-authored item code: nobody should have to type a unique key into
+  // a form, and nothing in the app requires the id to be meaningful.
+  _id: string;
   name?: string; // We make this optional for backward compatibility
   description: string;
   price: number;
@@ -29,7 +47,7 @@ export interface ProductDoc {
   brand?: string;
   sizes?: string[]; // e.g. ["55cm", "67cm", "78cm"]
   colors?: ColorVariant[];
-  variants?: ProductVariant[]; // Price and stock matrix
+  variants?: ProductVariant[]; // Price, stock and photo matrix
   featured?: boolean;
   createdAt: Date;
   updatedAt: Date;

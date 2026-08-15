@@ -262,13 +262,18 @@ export default function CatalogBrowser({
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-10">
           {/* Product grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+            {/*
+              A straight pass-through: the card hands back a resolved cart
+              line. This used to spread the whole product and bolt a colour
+              onto it, which meant `size` was always undefined and `price`
+              was the product's base field — min(variants.price) — so every
+              size was billed at the cheapest one.
+            */}
             {visibleProducts.map((product) => (
               <ProductCard
                 key={product.id}
                 product={product}
-                onAddToCart={(p, color, size) =>
-                  addItem({ ...p, quantity: 1, color, size })
-                }
+                onAddToCart={addItem}
               />
             ))}
 

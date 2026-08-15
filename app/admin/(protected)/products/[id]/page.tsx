@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
-import { ArrowLeft, ImageOff } from "lucide-react";
-import PhotoPicker from "@/components/admin/PhotoPicker";
-import ColorVariantEditor from "@/components/admin/ColorVariantEditor";
-import SizeTagInput from "@/components/admin/SizeTagInput";
-import VariantMatrixEditor from "@/components/admin/VariantMatrixEditor";
+import { ArrowLeft } from "lucide-react";
+import ProductForm, {
+  type ProductFormValues,
+} from "@/components/admin/ProductForm";
 import type { ColorVariant, ProductVariant } from "@/lib/models/product";
 
 interface AdminProduct {
@@ -33,65 +31,46 @@ export default function EditProductPage() {
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [originalPrice, setOriginalPrice] = useState("");
-  const [stock, setStock] = useState("");
-  const [image, setImage] = useState("");
-  const [hoverImage, setHoverImage] = useState("");
-  const [brand, setBrand] = useState("");
-  const [sizes, setSizes] = useState<string[]>([]);
-  const [colors, setColors] = useState<ColorVariant[]>([]);
-  const [variants, setVariants] = useState<ProductVariant[]>([]);
-  const [featured, setFeatured] = useState(false);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [availableBrands, setAvailableBrands] = useState<{id: string, name: string}[]>([]);
+  const [initial, setInitial] = useState<Partial<ProductFormValues>>();
 
-  // One effect, both requests in parallel. The brand list and the product
-  // don't depend on each other, and fetching the product by id means this
-  // no longer downloads the whole catalog to populate one form.
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      const [brandsRes, productRes] = await Promise.allSettled([
-        fetch("/api/admin/brands"),
-        fetch(`/api/admin/products/${encodeURIComponent(id)}`),
-      ]);
-
-      if (cancelled) return;
-
-      if (brandsRes.status === "fulfilled" && brandsRes.value.ok) {
-        const data = await brandsRes.value.json();
-        if (!cancelled) setAvailableBrands(Array.isArray(data) ? data : []);
-      } else {
-        console.error("Failed to fetch brands", brandsRes);
-      }
-
-      if (cancelled) return;
-
-      if (productRes.status === "fulfilled" && productRes.value.ok) {
-        const product: AdminProduct = await productRes.value.json();
+      try {
+        const res = await fetch(
+          `/api/admin/products/${encodeURIComponent(id)}`,
+        );
         if (cancelled) return;
-        setName(product.name || product.description || "");
-        setDescription(product.description);
-        setPrice(String(product.price));
-        setOriginalPrice(product.originalPrice ? String(product.originalPrice) : "");
-        setStock(String(product.stock));
-        setImage(product.image || "");
-        setHoverImage(product.hoverImage || "");
-        setBrand(product.brand || "");
-        setSizes(product.sizes || []);
-        setColors(product.colors || []);
-        setVariants(product.variants || []);
-        setFeatured(product.featured || false);
-      } else {
-        setNotFound(true);
-      }
 
-      setLoading(false);
+        if (!res.ok) {
+          setNotFound(true);
+          return;
+        }
+
+        const product: AdminProduct = await res.json();
+        if (cancelled) return;
+
+        setInitial({
+          name: product.name || product.description || "",
+          description: product.description,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          stock: product.stock,
+          image: product.image || "",
+          hoverImage: product.hoverImage || "",
+          brand: product.brand || "",
+          sizes: product.sizes || [],
+          colors: product.colors || [],
+          variants: product.variants || [],
+          featured: product.featured || false,
+        });
+      } catch (err) {
+        console.error("Failed to load product", err);
+        if (!cancelled) setNotFound(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
 
     return () => {
@@ -99,67 +78,18 @@ export default function EditProductPage() {
     };
   }, [id]);
 
-  const validColors = colors.filter((c) => c.name.trim() && c.image);
-  const defaultColor = useMemo(
-    () => validColors.find((c) => c.isDefault) || validColors[0] || null,
-    [validColors],
-  );
-  // Once colors exist, the main display photo comes from whichever color is
-  // marked as default — the standalone photo picker below is only used for
-  // items that don't have color variants at all.
-  const finalImage = defaultColor ? defaultColor.image : image;
-  const finalHoverImage = defaultColor ? defaultColor.hoverImage : hoverImage;
-
-  const hasVariants = validColors.length > 0 || sizes.length > 0;
-  const computedPrice = hasVariants && variants.length > 0 ? Math.min(...variants.map((v) => v.price)) : price;
-  const computedStock = hasVariants && variants.length > 0 ? variants.reduce((s, v) => s + v.stock, 0) : stock;
-  const variantOriginalPrices = variants.map((v) => v.originalPrice).filter((p): p is number => typeof p === 'number');
-  const computedOriginalPrice = hasVariants && variantOriginalPrices.length > 0 ? Math.max(...variantOriginalPrices) : (originalPrice ? Number(originalPrice) : undefined);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (!finalImage) {
-      setError(
-        validColors.length > 0
-          ? "Choose a photo for your main-display color before saving."
-          : "Choose a main photo before saving.",
-      );
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/admin/products/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim(),
-          price: Number(computedPrice),
-          originalPrice: computedOriginalPrice,
-          stock: Number(computedStock),
-          image: finalImage,
-          hoverImage: finalHoverImage || undefined,
-          brand: brand.trim() || undefined,
-          sizes,
-          colors: validColors,
-          variants,
-          featured,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save changes");
-      // See the note in products/new: the list is server-rendered now, so
-      // the edit is invisible unless the router cache is cleared first.
-      router.refresh();
-      router.push("/admin");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setSaving(false);
-    }
+  const handleSubmit = async (values: ProductFormValues) => {
+    const res = await fetch(`/api/admin/products/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to save changes");
+    // See the note in products/new: the list is server-rendered, so the
+    // edit is invisible unless the router cache is cleared first.
+    router.refresh();
+    router.push("/admin");
   };
 
   if (loading) return <p className="text-zinc-500 text-sm">Loading…</p>;
@@ -187,207 +117,18 @@ export default function EditProductPage() {
 
       <h1 className="text-2xl font-semibold text-zinc-900 mb-8">Edit item</h1>
 
-      <form
+      {/*
+        Mounted only once the product has loaded. ColorVariantEditor seeds
+        its internal rows from `initialVariants` on first render, so
+        rendering the form against empty data and filling it in later would
+        leave the colour editor permanently blank.
+      */}
+      <ProductForm
+        initial={initial}
+        submitLabel="Save changes"
+        savingLabel="Saving…"
         onSubmit={handleSubmit}
-        className="space-y-6 bg-surface border border-border rounded-2xl p-8"
-      >
-        <div className="grid sm:grid-cols-2 gap-4">
-          {!hasVariants && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-zinc-600 mb-2">
-                  Discounted price
-                </label>
-                <input
-                  required
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-600 mb-2">
-                  Original price (optional)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={originalPrice}
-                  onChange={(e) => setOriginalPrice(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-                />
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-4">
-          {!hasVariants && (
-            <div>
-              <label className="block text-sm font-medium text-zinc-600 mb-2">
-                Inventory
-              </label>
-              <input
-                required
-                type="number"
-                min="0"
-                step="1"
-                value={stock}
-                onChange={(e) => setStock(e.target.value)}
-                className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-              />
-            </div>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-600 mb-2">
-            Name
-          </label>
-          <input
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-600 mb-2">
-            Description
-          </label>
-          <textarea
-            required
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-600 mb-2">
-            Collection Name
-          </label>
-          <select
-            value={brand}
-            onChange={(e) => setBrand(e.target.value)}
-            className="w-full bg-white border border-border rounded-xl px-4 py-2.5 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 appearance-none"
-          >
-            <option value="">No brand</option>
-            {availableBrands.map((b) => (
-              <option key={b.id} value={b.name}>
-                {b.name}
-              </option>
-            ))}
-            {brand && !availableBrands.some((b) => b.name === brand) && (
-              <option value={brand}>{brand} (Legacy)</option>
-            )}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-600 mb-2">
-            Sizes
-          </label>
-          <SizeTagInput sizes={sizes} onChange={setSizes} />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-600 mb-2">
-            Colors
-          </label>
-          <p className="text-xs text-zinc-500 mb-3">
-            Each color can have its own main and hover photo — these swap in
-            on the product card and item page when a shopper picks that
-            color. Optional: skip this if the item doesn&apos;t come in
-            multiple colors.
-          </p>
-          <ColorVariantEditor
-            initialVariants={colors}
-            onChange={setColors}
-            defaultImage={image}
-            defaultHoverImage={hoverImage}
-          />
-        </div>
-
-        <VariantMatrixEditor
-          colors={validColors}
-          sizes={sizes}
-          basePrice={Number(price) || 0}
-          baseStock={Number(stock) || 0}
-          variants={variants}
-          onChange={setVariants}
-        />
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-600 mb-2">
-            Main display photo
-          </label>
-          {validColors.length > 0 ? (
-            <div className="flex items-center gap-3 bg-zinc-50 border border-border rounded-xl p-3">
-              <div className="w-14 h-14 rounded-lg overflow-hidden border border-border relative shrink-0 bg-white flex items-center justify-center">
-                {finalImage ? (
-                  <Image
-                    src={finalImage}
-                    alt="Main display"
-                    fill
-                    sizes="56px"
-                    className="object-cover"
-                  />
-                ) : (
-                  <ImageOff className="w-5 h-5 text-zinc-300" />
-                )}
-              </div>
-              <p className="text-sm text-zinc-600">
-                Using{" "}
-                <span className="font-medium text-zinc-900">
-                  {defaultColor?.name || "the main-display color"}
-                </span>
-                &apos;s photo. Change which color is used by marking a
-                different one &quot;Set as main display&quot; above.
-              </p>
-            </div>
-          ) : (
-            <PhotoPicker
-              image={image}
-              hoverImage={hoverImage}
-              onChangeImage={setImage}
-              onChangeHoverImage={setHoverImage}
-            />
-          )}
-        </div>
-
-        <div>
-          <label className="flex items-center gap-3 bg-zinc-50 border border-border rounded-xl p-4 cursor-pointer hover:bg-zinc-100 transition-colors">
-            <input
-              type="checkbox"
-              checked={featured}
-              onChange={(e) => setFeatured(e.target.checked)}
-              className="w-5 h-5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
-            />
-            <div>
-              <p className="text-sm font-medium text-zinc-900">Featured Product</p>
-              <p className="text-xs text-zinc-500">Highlight this item on the storefront and rank it higher in default sorting.</p>
-            </div>
-          </label>
-        </div>
-
-        {error && <p className="text-red-500 text-sm">{error}</p>}
-
-        <button
-          disabled={saving}
-          type="submit"
-          className="w-full bg-zinc-900 text-white py-3 rounded-xl font-medium disabled:opacity-50 hover:bg-zinc-700 transition-colors"
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
-      </form>
+      />
     </div>
   );
 }

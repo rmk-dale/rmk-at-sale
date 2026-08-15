@@ -1,19 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useCartStore } from "@/lib/store";
-import { Minus, Plus, Trash2, X, ShoppingBag } from "lucide-react";
+import { useCatalog } from "@/lib/useCatalog";
+import CartLine from "@/components/CartLine";
+import { X, ShoppingBag } from "lucide-react";
+
+/**
+ * Whether the persisted cart has been read out of localStorage yet.
+ *
+ * The server has no localStorage, so it must render the pre-hydration
+ * state or React reports a mismatch. This used to be a `mounted` flag set
+ * from an effect; subscribing to zustand's own hydration signal says what
+ * is actually being waited for, and keeps the setState out of an effect
+ * body where it caused a second render pass on every mount.
+ */
+function useCartHydrated() {
+  return useSyncExternalStore(
+    useCartStore.persist.onFinishHydration,
+    () => useCartStore.persist.hasHydrated(),
+    () => false,
+  );
+}
 
 export default function CartDrawer() {
-  const { items, isOpen, closeCart, updateQuantity, removeItem, getTotal } =
-    useCartStore();
-  const [mounted, setMounted] = useState(false);
+  const { items, isOpen, closeCart, getTotal, getTotalItems } = useCartStore();
+  const hydrated = useCartHydrated();
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const catalog = useCatalog(isOpen && items.length > 0);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -23,7 +39,21 @@ export default function CartDrawer() {
     };
   }, [isOpen]);
 
-  if (!mounted || !isOpen) return null;
+  // A panel that covers the page needs a keyboard way out, and focus has
+  // to land inside it or a keyboard user is left tabbing the page behind.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeCart();
+    };
+    document.addEventListener("keydown", onKey);
+    panelRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, closeCart]);
+
+  if (!hydrated || !isOpen) return null;
+
+  const totalItems = getTotalItems();
 
   return (
     <div className="fixed inset-0 z-[60]">
@@ -34,12 +64,20 @@ export default function CartDrawer() {
       />
 
       {/* Panel */}
-      <div className="absolute top-0 right-0 h-full w-full max-w-md bg-surface border-l border-border flex flex-col animate-in slide-in-from-right duration-300">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Your cart"
+        tabIndex={-1}
+        className="absolute top-0 right-0 h-full w-full max-w-md bg-surface border-l border-border flex flex-col animate-in slide-in-from-right duration-300 focus:outline-none"
+      >
         <div className="flex items-center justify-between px-6 h-16 border-b border-border">
           <h2 className="text-lg font-semibold text-foreground">
             Your cart{" "}
-            {items.length > 0 && (
-              <span className="text-muted font-normal">({items.length})</span>
+            {totalItems > 0 && (
+              /* Units, not lines. Three of one item used to read "(1)". */
+              <span className="text-muted font-normal">({totalItems})</span>
             )}
           </h2>
           <button
@@ -62,74 +100,12 @@ export default function CartDrawer() {
           ) : (
             <div className="space-y-5">
               {items.map((item) => (
-                <div key={item.cartItemId || item.id} className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-background rounded-xl border border-border flex-shrink-0 relative overflow-hidden flex items-center justify-center">
-                    {item.image ? (
-                      <Image
-                        src={item.image}
-                        alt={item.name}
-                        fill
-                        sizes="64px"
-                        className="object-cover"
-                      />
-                    ) : (
-                      <ShoppingBag className="w-6 h-6 text-border" />
-                    )}
-                  </div>
-
-                  <div className="flex-grow min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {item.name}
-                    </p>
-                    {(item.color || item.size) && (
-                      <p className="text-xs text-muted mt-0.5 truncate">
-                        {[item.color, item.size].filter(Boolean).join(" | ")}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2 mt-1">
-                      {item.originalPrice !== undefined && item.originalPrice > item.price && (
-                        <p className="text-xs text-muted line-through tabular-nums">
-                          ₱{item.originalPrice.toFixed(2)}
-                        </p>
-                      )}
-                      <p className="text-sm text-primary font-medium tabular-nums">
-                        ₱{item.price.toFixed(2)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-3 mt-2 bg-background rounded-full px-3 py-1 border border-border w-fit">
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.cartItemId!, item.quantity - 1)
-                        }
-                        aria-label={`Decrease quantity of ${item.name}`}
-                        className="text-muted hover:text-primary transition-colors"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="w-4 text-center text-sm font-medium text-foreground tabular-nums">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.cartItemId!, item.quantity + 1)
-                        }
-                        aria-label={`Increase quantity of ${item.name}`}
-                        className="text-muted hover:text-primary transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => removeItem(item.cartItemId!)}
-                    className="p-2 text-muted hover:text-primary hover:bg-primary/5 rounded-full transition-all flex-shrink-0"
-                    aria-label={`Remove ${item.name} from cart`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                <CartLine
+                  key={item.cartItemId || item.id}
+                  item={item}
+                  product={catalog?.find((p) => p.id === item.id)}
+                  variant="compact"
+                />
               ))}
             </div>
           )}

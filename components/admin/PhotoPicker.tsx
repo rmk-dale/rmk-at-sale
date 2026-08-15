@@ -1,13 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Image from "next/image";
 import { ImageOff } from "lucide-react";
-
-interface Photo {
-  filename: string;
-  path: string;
-}
+import { usePhotoLibrary } from "./usePhotoLibrary";
 
 interface PhotoPickerProps {
   image: string;
@@ -22,18 +17,9 @@ export default function PhotoPicker({
   onChangeImage,
   onChangeHoverImage,
 }: PhotoPickerProps) {
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/admin/photos")
-      .then((res) => res.json())
-      .then((data) => {
-        setPhotos(Array.isArray(data) ? data : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+  // Shared with every PhotoField on the page, so the form issues one
+  // request for the library rather than one per picker.
+  const { photos, loading } = usePhotoLibrary();
 
   if (loading) {
     return (

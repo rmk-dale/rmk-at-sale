@@ -49,6 +49,28 @@ export interface OrderDoc {
   orderNumber: string;
   buyerEmail: string;
   items: OrderItem[];
+  /**
+   * What the lines came to before the bundle rules — the plain sum of
+   * `price × quantity` across `items`.
+   *
+   * Optional because orders placed before the bundle rules shipped have
+   * neither this nor `bundleDiscount`, and backfilling them would be
+   * inventing a number. Read it as `order.subtotal ?? order.total`: for a
+   * legacy order the two were the same thing.
+   */
+  subtotal?: number;
+  /**
+   * Total taken off by the bundle rules — 5% of the subtotal of every
+   * product group holding exactly three units, summed.
+   *
+   * Recorded here rather than folded into `OrderItem.price` on purpose. A
+   * line's `price` is the variant price the shopper was actually quoted,
+   * and rewriting it to a discounted figure would put a number on the
+   * receipt and in the admin list that was never shown at any point in
+   * the purchase. `total === (subtotal ?? total) - (bundleDiscount ?? 0)`
+   * is the invariant.
+   */
+  bundleDiscount?: number;
   total: number;
   status: OrderStatus;
   /**

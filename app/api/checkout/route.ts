@@ -13,7 +13,12 @@ import {
   hashIdentifier,
   rateLimitResponse,
 } from "@/lib/rateLimit";
-import { validateCartItems } from "@/lib/validation";
+import {
+  MIN_UNITS_PER_PRODUCT,
+  bundleMinimumMessage,
+  evaluateBundles,
+  validateCartItems,
+} from "@/lib/validation";
 import {
   DAILY_ORDER_COUNTED_STATUSES,
   DAILY_ORDER_LIMIT,
@@ -71,6 +76,25 @@ class InvalidVariantError extends Error {
 class DailyOrderLimitError extends Error {
   constructor(public placed: number) {
     super(`Daily order limit reached (${placed})`);
+  }
+}
+
+/**
+ * Raised when a product appears on the order fewer than
+ * `MIN_UNITS_PER_PRODUCT` times.
+ *
+ * Checked inside the transaction rather than ahead of it, even though the
+ * rule is about quantities and needs no database at all. The reason is the
+ * message: before the product read there is nothing to call the offending
+ * item but its ObjectId hex, and "68f2c1a9… needs at least 2 pieces" tells
+ * a shopper nothing about which thing in their cart to fix. By this point
+ * the documents are in hand and the error can name them. The cart blocks
+ * this case client-side anyway, so the wasted concurrency slot is paid
+ * only by a tampered or stale cart.
+ */
+class BundleMinimumError extends Error {
+  constructor(public names: string[]) {
+    super(`Below the ${MIN_UNITS_PER_PRODUCT}-piece minimum`);
   }
 }
 
@@ -176,9 +200,24 @@ export async function POST(req: NextRequest) {
     const products = db.collection<ProductDoc>("products");
     const orders = db.collection<OrderDoc>("orders");
 
+    // `subtotalAmount` is what the lines come to before the bundle rules;
+    // `totalAmount` is what is actually charged. They differ by
+    // `bundleDiscount`, and all three are stored on the order so the
+    // arithmetic on a receipt can be checked against the record.
+    let subtotalAmount = 0;
+    let bundleDiscount = 0;
     let totalAmount = 0;
     let orderNumber = "";
     const purchasedItems: OrderItem[] = [];
+
+    // Which products earned the 5%, for the receipt. Ids drive the badge
+    // on each line; names drive the "5% off <product>" on the discount
+    // row. Both are captured inside the transaction, where the grouped
+    // result and the product documents are in scope — a line cannot work
+    // this out for itself, because three units split across two sizes
+    // qualify and neither line alone looks like it should.
+    let bundledProductIds = new Set<string>();
+    let bundledProductNames: string[] = [];
 
     try {
       // Allocated before the transaction opens, not inside it. Every
@@ -193,8 +232,14 @@ export async function POST(req: NextRequest) {
       const mongoSession = client.startSession();
       try {
         await mongoSession.withTransaction(async () => {
+          // Reset, not just initialise: `withTransaction` retries the whole
+          // body on a write conflict, and these outlive a single attempt.
+          subtotalAmount = 0;
+          bundleDiscount = 0;
           totalAmount = 0;
           purchasedItems.length = 0;
+          bundledProductIds = new Set<string>();
+          bundledProductNames = [];
 
           // Daily order cap, counted inside the transaction.
           //
@@ -345,7 +390,6 @@ export async function POST(req: NextRequest) {
               } as AnyBulkWriteOperation<ProductDoc>);
             }
 
-            totalAmount += itemPrice * quantity;
             purchasedItems.push({
               itemCode: id,
               name: product.name || product.description,
@@ -356,6 +400,50 @@ export async function POST(req: NextRequest) {
               color,
               size,
             });
+          }
+
+          // The bundle rules, applied to the order exactly as priced above.
+          //
+          // This is the authority. The cart runs the same function to
+          // decide what to show and whether to enable its button, but a
+          // client can send whatever it likes — the figures that reach the
+          // order document are only ever the ones computed here, from
+          // variant prices read inside this transaction.
+          //
+          // Grouping is by product id, so two lines that differ only in
+          // colour or size count toward the same minimum and the same
+          // bundle. `purchasedItems` is already keyed that way, one entry
+          // per validated line, so it is the input as-is.
+          const bundles = evaluateBundles(
+            purchasedItems.map((item) => ({
+              id: item.itemCode,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+          );
+
+          // Raised before the stock write, so a cart that breaks the rule
+          // costs nothing beyond the reads that have already happened.
+          if (!bundles.ok) {
+            throw new BundleMinimumError(
+              bundles.shortGroups.map((group) => {
+                const doc = productsById.get(group.id);
+                return doc?.name || doc?.description || "An item";
+              }),
+            );
+          }
+
+          subtotalAmount = bundles.subtotal;
+          bundleDiscount = bundles.discount;
+          totalAmount = bundles.total;
+
+          for (const group of bundles.groups) {
+            if (!group.discounted) continue;
+            bundledProductIds.add(group.id);
+            const doc = productsById.get(group.id);
+            bundledProductNames.push(
+              doc?.name || doc?.description || "an item",
+            );
           }
 
           // Every stock decrement on the order, in one write.
@@ -385,6 +473,14 @@ export async function POST(req: NextRequest) {
               orderNumber,
               buyerEmail: email,
               items: purchasedItems,
+              // `OrderItem.price` stays the true unit price of the variant.
+              // Folding the discount into it would put a price on the
+              // receipt that the shopper was never quoted, which is the
+              // same class of mistake as the `originalPrice` aggregate
+              // leak — so the discount is recorded once, here, at the
+              // order level.
+              subtotal: subtotalAmount,
+              bundleDiscount,
               total: totalAmount,
               status: "received",
               stockReleased: false,
@@ -422,6 +518,12 @@ export async function POST(req: NextRequest) {
         }
         if (err instanceof InvalidVariantError) {
           return NextResponse.json({ error: err.detail }, { status: 400 });
+        }
+        if (err instanceof BundleMinimumError) {
+          return NextResponse.json(
+            { error: bundleMinimumMessage(err.names) },
+            { status: 400 },
+          );
         }
         if (err instanceof DailyOrderLimitError) {
           return NextResponse.json(
@@ -463,9 +565,15 @@ export async function POST(req: NextRequest) {
       price: item.price,
       color: item.color,
       size: item.size,
+      bundled: bundledProductIds.has(item.itemCode),
     }));
     const receiptTotal = totalAmount;
     const receiptOrderNumber = orderNumber;
+    const receiptBreakdown = {
+      subtotal: subtotalAmount,
+      bundleDiscount,
+      bundledNames: bundledProductNames,
+    };
 
     after(async () => {
       try {
@@ -474,6 +582,7 @@ export async function POST(req: NextRequest) {
           receiptTotal,
           receiptItems,
           receiptOrderNumber,
+          receiptBreakdown,
         );
       } catch (emailError) {
         // The order exists and the customer has already been told so. This

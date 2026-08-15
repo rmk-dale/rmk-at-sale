@@ -19,7 +19,9 @@
     "migrate:orders": "node --experimental-strip-types scripts/migrate-orders.ts",
     "migrate:images": "node --experimental-strip-types scripts/migrate-image-paths.ts",
     "check:photos": "node --experimental-strip-types scripts/check-photo-buckets.ts",
-    "check:payload": "node --experimental-strip-types scripts/check-product-payload.ts"
+    "check:payload": "node --experimental-strip-types scripts/check-product-payload.ts",
+    "check:bundles": "node --experimental-strip-types scripts/check-bundles.ts",
+    "preview:emails": "node --experimental-strip-types scripts/preview-emails.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

@@ -4,7 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useCartStore } from "@/lib/store";
-import { MAX_QUANTITY_PER_LINE } from "@/lib/validation";
+import { useHydrated } from "@/lib/useHydrated";
+import {
+  BUNDLE_SIZE,
+  MAX_QUANTITY_PER_LINE,
+  MIN_UNITS_PER_PRODUCT,
+} from "@/lib/validation";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
 import ColorSelector from "@/components/ColorSelector";
 import SizeSelector from "@/components/SizeSelector";
@@ -30,6 +35,16 @@ const LOW_STOCK_THRESHOLD = 5;
 export default function ProductDetail({ product }: { product: PublicProduct }) {
   const router = useRouter();
   const addItem = useCartStore((state) => state.addItem);
+  const cartItems = useCartStore((state) => state.items);
+
+  /*
+    The cart lives in localStorage, which the server render has no view of.
+    Anything derived from it has to wait for hydration or React reports a
+    mismatch — so the quantity default below, which depends only on the
+    product, is set directly, while the "you'll have N in your cart" line
+    is held back until this flips.
+  */
+  const cartReady = useHydrated();
 
   const defaultColor =
     product.colors?.find((c) => c.isDefault) ?? product.colors?.[0] ?? null;
@@ -41,7 +56,16 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
   // looked at the size row still got one on their order, at a price they
   // had not seen.
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  /*
+    Starts at the minimum, not at 1.
+
+    The stepper still goes down to 1, and deliberately so: the minimum is
+    per product, not per line, so one 55cm and one 67cm is a perfectly
+    legal way to reach it. Clamping the floor to 2 would make that mixing
+    impossible — the shopper would be forced to two of a single size. The
+    default just makes the common path the effortless one.
+  */
+  const [quantity, setQuantity] = useState(MIN_UNITS_PER_PRODUCT);
   const [added, setAdded] = useState(false);
   const [ctaVisible, setCtaVisible] = useState(true);
 
@@ -106,9 +130,33 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
     selectedColor?.hoverImage ||
     product.hoverImage;
 
-  const canAdd = sizeChosen && variantResolved && displayStock > 0;
+  /*
+    Every unit of this product that exists, across every colour and size.
+
+    The minimum is per product and can be met by mixing variants, so the
+    question "can this be bought at all?" is not about the selected cell —
+    a shopper looking at the last 55cm can still reach two by taking a
+    67cm. Only when the whole matrix holds fewer than the minimum is the
+    product genuinely unbuyable, and saying so here is better than letting
+    someone assemble a cart that checkout is guaranteed to reject.
+  */
+  const productTotalStock = hasVariants
+    ? product.variants!.reduce((sum, v) => sum + Math.max(0, v.stock), 0)
+    : product.stock;
+  const enoughStockForMinimum = productTotalStock >= MIN_UNITS_PER_PRODUCT;
+
+  const canAdd =
+    sizeChosen && variantResolved && displayStock > 0 && enoughStockForMinimum;
   const maxQuantity = Math.max(1, Math.min(displayStock, MAX_QUANTITY_PER_LINE));
   const effectiveQuantity = Math.min(quantity, maxQuantity);
+
+  // What this product's group will hold once this add lands. The cart may
+  // already carry other sizes or colours of it, and they all count.
+  const inCartQuantity = cartItems.reduce(
+    (sum, line) => (line.id === product.id ? sum + line.quantity : sum),
+    0,
+  );
+  const projectedQuantity = inCartQuantity + effectiveQuantity;
 
   const discount =
     displayOriginalPrice && displayOriginalPrice > displayPrice
@@ -132,15 +180,35 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
     setTimeout(() => setAdded(false), 1500);
   };
 
-  const buttonLabel = !sizeChosen
-    ? "Select a size"
-    : !variantResolved
-      ? "Unavailable"
-      : displayStock <= 0
-        ? "Out of stock"
-        : added
-          ? "Added to cart"
-          : `Add to cart · ₱${(displayPrice * effectiveQuantity).toFixed(2)}`;
+  const buttonLabel = !enoughStockForMinimum
+    ? "Not enough stock"
+    : !sizeChosen
+      ? "Select a size"
+      : !variantResolved
+        ? "Unavailable"
+        : displayStock <= 0
+          ? "Out of stock"
+          : added
+            ? "Added to cart"
+            : `Add to cart · ₱${(displayPrice * effectiveQuantity).toFixed(2)}`;
+
+  /*
+    One line under the CTA, describing where this add leaves the product's
+    group. Only the states a shopper can act on are worth a sentence — a
+    group already past three has nothing useful to be told, since the
+    discount is earned at exactly three and the cart does not ask anyone to
+    buy less.
+  */
+  const bundleHint =
+    !cartReady || !canAdd
+      ? null
+      : projectedQuantity < MIN_UNITS_PER_PRODUCT
+        ? `Minimum ${MIN_UNITS_PER_PRODUCT} pieces per item — you can mix sizes and colours.`
+        : projectedQuantity === BUNDLE_SIZE
+          ? `That makes a ${BUNDLE_SIZE}-piece bundle — 5% off this item.`
+          : projectedQuantity < BUNDLE_SIZE
+            ? `Take ${BUNDLE_SIZE - projectedQuantity} more of this item for a ${BUNDLE_SIZE}-piece bundle and 5% off.`
+            : null;
 
   const buttonClass =
     "w-full bg-primary text-white py-3.5 rounded-xl font-medium hover:bg-primary-hover transition-all transform active:scale-95 motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100";
@@ -324,13 +392,33 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
                 )}
               </div>
 
-              <button
-                disabled={!canAdd}
-                onClick={handleAddToCart}
-                className={buttonClass}
-              >
-                {buttonLabel}
-              </button>
+              <div className="space-y-2">
+                <button
+                  disabled={!canAdd}
+                  onClick={handleAddToCart}
+                  className={buttonClass}
+                >
+                  {buttonLabel}
+                </button>
+
+                {!enoughStockForMinimum ? (
+                  <p className="text-xs text-muted leading-relaxed">
+                    {productTotalStock <= 0
+                      ? "This item is sold out."
+                      : `Only ${productTotalStock} left across every size and colour, and items are sold ${MIN_UNITS_PER_PRODUCT} at a time.`}
+                  </p>
+                ) : bundleHint ? (
+                  <p
+                    className={`text-xs leading-relaxed ${
+                      projectedQuantity === BUNDLE_SIZE
+                        ? "text-emerald-700 font-medium"
+                        : "text-muted"
+                    }`}
+                  >
+                    {bundleHint}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>

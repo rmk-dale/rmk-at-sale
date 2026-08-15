@@ -1,32 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { useCartStore } from "@/lib/store";
+import {
+  useCartStore,
+  cartLineId,
+  evaluateCart,
+  groupLeadLineIds,
+} from "@/lib/store";
 import { useCatalog } from "@/lib/useCatalog";
+import { useHydrated } from "@/lib/useHydrated";
 import CartLine from "@/components/CartLine";
+import { MIN_UNITS_PER_PRODUCT } from "@/lib/validation";
 import { X, ShoppingBag } from "lucide-react";
 
-/**
- * Whether the persisted cart has been read out of localStorage yet.
- *
- * The server has no localStorage, so it must render the pre-hydration
- * state or React reports a mismatch. This used to be a `mounted` flag set
- * from an effect; subscribing to zustand's own hydration signal says what
- * is actually being waited for, and keeps the setState out of an effect
- * body where it caused a second render pass on every mount.
- */
-function useCartHydrated() {
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
-  return hydrated;
-}
-
 export default function CartDrawer() {
-  const { items, isOpen, closeCart, getTotal, getTotalItems } = useCartStore();
-  const hydrated = useCartHydrated();
+  const { items, isOpen, closeCart, getTotalItems } = useCartStore();
+  /*
+    The persisted cart has not been read out of localStorage during the
+    server render, so the drawer must render the pre-hydration state or
+    React reports a mismatch. `useHydrated` is shared with the cart page
+    and the product detail page — see lib/useHydrated.ts for why it is not
+    a `useState` plus an effect.
+  */
+  const hydrated = useHydrated();
   const panelRef = useRef<HTMLDivElement>(null);
 
   const catalog = useCatalog(isOpen && items.length > 0);
@@ -54,6 +51,10 @@ export default function CartDrawer() {
   if (!hydrated || !isOpen) return null;
 
   const totalItems = getTotalItems();
+  // Same evaluation as the cart page, so the drawer cannot show a total
+  // the page then disagrees with.
+  const bundles = evaluateCart(items);
+  const noticeLines = groupLeadLineIds(items);
 
   return (
     <div className="fixed inset-0 z-[60]">
@@ -99,26 +100,51 @@ export default function CartDrawer() {
             </div>
           ) : (
             <div className="space-y-5">
-              {items.map((item) => (
-                <CartLine
-                  key={item.cartItemId || item.id}
-                  item={item}
-                  product={catalog?.find((p) => p.id === item.id)}
-                  variant="compact"
-                />
-              ))}
+              {items.map((item) => {
+                const lineId = cartLineId(item);
+                return (
+                  <CartLine
+                    key={lineId}
+                    item={item}
+                    product={catalog?.find((p) => p.id === item.id)}
+                    variant="compact"
+                    group={bundles.byProduct.get(item.id)}
+                    showGroupNotice={noticeLines.has(lineId)}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
 
         {items.length > 0 && (
           <div className="border-t border-border px-6 py-6">
+            {bundles.discount > 0 && (
+              <div className="flex items-center justify-between mb-2 text-sm">
+                <span className="text-emerald-700">Bundle discount (5%)</span>
+                <span className="text-emerald-700 tabular-nums">
+                  −₱{bundles.discount.toFixed(2)}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between mb-4">
               <span className="text-muted">Subtotal</span>
               <span className="text-lg font-semibold text-foreground tabular-nums">
-                ₱{getTotal().toFixed(2)}
+                ₱{bundles.total.toFixed(2)}
               </span>
             </div>
+            {/*
+              The drawer does not block the way the cart page does — it
+              links to the cart, and the cart is where the offending line
+              can actually be fixed. Saying so here stops the shopper
+              discovering the rule one screen later.
+            */}
+            {!bundles.ok && (
+              <p className="text-xs text-primary font-medium mb-3 leading-relaxed">
+                Some items are below the {MIN_UNITS_PER_PRODUCT}-piece minimum.
+                Adjust them in your cart to check out.
+              </p>
+            )}
             <Link
               href="/cart"
               onClick={closeCart}

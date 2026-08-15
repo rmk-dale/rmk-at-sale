@@ -1,10 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useCartStore } from "@/lib/store";
+import { useState } from "react";
+import {
+  useCartStore,
+  cartLineId,
+  evaluateCart,
+  groupLeadLineIds,
+} from "@/lib/store";
 import { useCatalog } from "@/lib/useCatalog";
+import { useHydrated } from "@/lib/useHydrated";
 import CartLine from "@/components/CartLine";
 import {
+  BUNDLE_SIZE,
+  MIN_UNITS_PER_PRODUCT,
+  bundleMinimumMessage,
+} from "@/lib/validation";
+import {
+  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Lock,
@@ -13,16 +25,16 @@ import {
 import Link from "next/link";
 
 export default function CartPage() {
-  const { items, getTotal, getTotalItems, clearCart } = useCartStore();
+  // The money comes from `bundles` below rather than `getTotal()`: the
+  // summary needs the subtotal, the discount and the payable total
+  // together, and one evaluation produces all three consistently.
+  const { items, getTotalItems, clearCart } = useCartStore();
   /*
     Whether the persisted cart has been read out of localStorage yet. The
     server has no localStorage, so it must render the pre-hydration state
     or React reports a mismatch.
   */
-  const [hydrated, setHydrated] = useState(false);
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
+  const hydrated = useHydrated();
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"CART" | "EMAIL" | "OTP" | "SUCCESS">(
@@ -47,6 +59,23 @@ export default function CartPage() {
         ? sum + (i.originalPrice - i.price) * i.quantity
         : sum,
     0,
+  );
+
+  /*
+    The bundle rules, from the same function the checkout route runs. Two
+    things come out of it: the money shown in the summary, and whether the
+    order can be placed at all.
+
+    Blocking here is a courtesy, not a control — the server re-derives all
+    of this from variant prices inside the checkout transaction and will
+    refuse the same cart on its own. What it buys is that a shopper finds
+    out while they can still fix it, rather than after entering an email
+    and waiting for a one-time code.
+  */
+  const bundles = evaluateCart(items);
+  const noticeLines = groupLeadLineIds(items);
+  const blockingNames = bundles.shortGroups.map(
+    (group) => items.find((i) => i.id === group.id)?.name ?? "",
   );
 
   if (!hydrated) return null;
@@ -77,6 +106,16 @@ export default function CartPage() {
 
   const handleVerifyAndCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Re-checked at submit, not only when the button was rendered. The
+    // drawer stays reachable from the navbar during the email and code
+    // steps, so a cart that satisfied the rules a minute ago may not now.
+    if (!bundles.ok) {
+      setError(bundleMinimumMessage(blockingNames));
+      setStep("CART");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -210,14 +249,19 @@ export default function CartPage() {
           <div className="lg:col-span-2 space-y-4">
             {/* Same component the drawer renders, so the two views cannot
                 disagree about what a line says or what it lets you do. */}
-            {items.map((item) => (
-              <CartLine
-                key={item.cartItemId || item.id}
-                item={item}
-                product={catalog?.find((p) => p.id === item.id)}
-                variant="full"
-              />
-            ))}
+            {items.map((item) => {
+              const lineId = cartLineId(item);
+              return (
+                <CartLine
+                  key={lineId}
+                  item={item}
+                  product={catalog?.find((p) => p.id === item.id)}
+                  variant="full"
+                  group={bundles.byProduct.get(item.id)}
+                  showGroupNotice={noticeLines.has(lineId)}
+                />
+              );
+            })}
           </div>
 
           {/* Checkout Panel */}
@@ -238,22 +282,67 @@ export default function CartPage() {
                 )}
               </div>
 
+              {/*
+                Subtotal and total are separate rows only once a bundle has
+                actually fired. On an order with nothing qualifying they
+                would be the same number printed twice, and a "Bundle
+                discount ₱0.00" line reads as a discount that failed rather
+                than one that was never earned.
+              */}
+              {bundles.discount > 0 && (
+                <>
+                  <div className="flex justify-between items-center mb-2 text-sm">
+                    <span className="text-muted">Subtotal</span>
+                    <span className="text-muted tabular-nums">
+                      ₱{bundles.subtotal.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center mb-2 text-sm">
+                    <span className="text-emerald-700">
+                      Bundle discount (5%)
+                    </span>
+                    <span className="text-emerald-700 tabular-nums">
+                      −₱{bundles.discount.toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              )}
+
               <div className="flex justify-between items-center mb-6">
                 <span className="text-muted">Total</span>
                 <span className="text-foreground font-semibold text-2xl tabular-nums">
-                  ₱{getTotal().toFixed(2)}
+                  ₱{bundles.total.toFixed(2)}
                 </span>
               </div>
+
+              {!bundles.ok && (
+                <div className="flex items-start gap-2 mb-6 p-3 rounded-xl bg-primary/5 border border-primary/20">
+                  <AlertTriangle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <p className="text-xs text-foreground leading-relaxed">
+                    {bundleMinimumMessage(blockingNames)}
+                  </p>
+                </div>
+              )}
+
+              {bundles.ok && bundles.discount === 0 && items.length > 0 && (
+                <p className="text-xs text-muted mb-6 leading-relaxed">
+                  Any item you take exactly {BUNDLE_SIZE} of — mixing sizes and
+                  colours if you like — gets 5% off that item.
+                </p>
+              )}
 
               <div className="w-full h-px bg-border mb-8" />
 
               {step === "CART" && (
                 <button
                   onClick={() => setStep("EMAIL")}
-                  className="w-full flex items-center justify-center gap-2 bg-primary text-white py-3.5 rounded-xl font-medium hover:bg-primary-hover transition-all transform active:scale-95"
+                  disabled={!bundles.ok}
+                  className="w-full flex items-center justify-center gap-2 bg-primary text-white py-3.5 rounded-xl font-medium hover:bg-primary-hover transition-all transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100"
                 >
-                  Secure checkout
-                  <ArrowRight className="w-4 h-4" />
+                  {bundles.ok
+                    ? "Secure checkout"
+                    : `Minimum ${MIN_UNITS_PER_PRODUCT} per item`}
+                  {bundles.ok && <ArrowRight className="w-4 h-4" />}
                 </button>
               )}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useCartStore } from "@/lib/store";
 import { useCatalog } from "@/lib/useCatalog";
@@ -17,11 +17,11 @@ import { X, ShoppingBag } from "lucide-react";
  * body where it caused a second render pass on every mount.
  */
 function useCartHydrated() {
-  return useSyncExternalStore(
-    useCartStore.persist.onFinishHydration,
-    () => useCartStore.persist.hasHydrated(),
-    () => false,
-  );
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+  return hydrated;
 }
 
 export default function CartDrawer() {

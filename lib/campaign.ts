@@ -14,6 +14,7 @@
 export const CAMPAIGN = {
   name: "Mega Bundeals",
   offer: "Extra 5% off 3-piece bundles",
+  note: "NOTE: Items are sold in bundles only, with a minimum purchase of 2 pieces.",
 
   /** Human-readable window, used in the accessible page heading. */
   window: "August 19 – September 18, 2026",

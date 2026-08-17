@@ -206,25 +206,45 @@ export default function CartPage() {
             <h2 className="text-xl font-semibold mb-4 text-foreground">
               {modalContent === "TERMS" ? "Terms and Conditions" : "Data Privacy Policy"}
             </h2>
-            <div className="space-y-4 text-sm text-muted">
+            <div className="space-y-4 text-sm text-foreground/90 leading-relaxed">
               {modalContent === "TERMS" ? (
                 <>
-                  <p>Placeholder for Terms and Conditions...</p>
-                  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+                  <p>Welcome to RMK American Tourister Sale.</p>
+                  <p>
+                    Please note that submitting this form does not constitute a final purchase. 
+                    <strong> This is only an ordering process. Someone from our team will confirm the sale </strong> 
+                    and contact you for payment and delivery details.
+                  </p>
+                  <p>By proceeding, you agree to these terms.</p>
                 </>
               ) : (
                 <>
-                  <p>Placeholder for Data Privacy Policy...</p>
-                  <p>We only collect your email address for tracking orders. Someone from our team will contact you to finalize and confirm the sale. Your data will not be shared with third parties.</p>
+                  <p>
+                    <strong>We only collect your email address for tracking orders.</strong>
+                  </p>
+                  <p>
+                    Someone from our team will contact you to finalize and confirm the sale. 
+                    Your data will be kept strictly confidential and will not be shared with any third parties.
+                  </p>
                 </>
               )}
             </div>
-            <div className="mt-8">
+            <div className="mt-8 flex gap-3">
               <button
                 onClick={() => setModalContent(null)}
-                className="w-full bg-primary text-white py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
+                className="flex-1 border border-border text-foreground py-3 rounded-xl font-medium hover:bg-surface transition-colors"
               >
-                Close
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (modalContent === "TERMS") setAcceptedTerms(true);
+                  if (modalContent === "PRIVACY") setAcceptedPrivacy(true);
+                  setModalContent(null);
+                }}
+                className="flex-1 bg-primary text-white py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
+              >
+                I Agree
               </button>
             </div>
           </div>
@@ -372,49 +392,60 @@ export default function CartPage() {
                     </p>
                   </div>
 
-                  <div className="space-y-3 pt-2">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        required
-                        checked={acceptedTerms}
-                        onChange={(e) => setAcceptedTerms(e.target.checked)}
-                        className="mt-1 rounded border-border text-foreground focus:ring-primary"
-                      />
+                  <div className="space-y-3 pt-4">
+                    <label 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (!acceptedTerms) setModalContent("TERMS");
+                        else setAcceptedTerms(false);
+                      }}
+                      className={`flex items-start gap-3 cursor-pointer p-4 border rounded-xl transition-colors ${acceptedTerms ? 'border-primary/50 bg-primary/5' : 'border-border hover:bg-surface'}`}
+                    >
+                      <div className="flex items-center h-5 mt-0.5">
+                        <input
+                          type="checkbox"
+                          required
+                          checked={acceptedTerms}
+                          readOnly
+                          className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-background bg-background cursor-pointer"
+                        />
+                      </div>
                       <span className="text-sm text-muted leading-relaxed">
                         I agree to the{" "}
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setModalContent("TERMS");
-                          }}
-                          className="text-foreground underline hover:text-primary-hover font-medium"
+                          className="text-foreground underline hover:text-primary transition-colors font-medium"
                         >
                           Terms and Conditions
                         </button>.
                       </span>
                     </label>
-                    <label className="flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        required
-                        checked={acceptedPrivacy}
-                        onChange={(e) => setAcceptedPrivacy(e.target.checked)}
-                        className="mt-1 rounded border-border text-foreground focus:ring-primary flex-shrink-0"
-                      />
+
+                    <label 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (!acceptedPrivacy) setModalContent("PRIVACY");
+                        else setAcceptedPrivacy(false);
+                      }}
+                      className={`flex items-start gap-3 cursor-pointer p-4 border rounded-xl transition-colors ${acceptedPrivacy ? 'border-primary/50 bg-primary/5' : 'border-border hover:bg-surface'}`}
+                    >
+                      <div className="flex items-center h-5 mt-0.5">
+                        <input
+                          type="checkbox"
+                          required
+                          checked={acceptedPrivacy}
+                          readOnly
+                          className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-background bg-background cursor-pointer flex-shrink-0"
+                        />
+                      </div>
                       <span className="text-sm text-muted leading-relaxed">
                         I accept the{" "}
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setModalContent("PRIVACY");
-                          }}
-                          className="text-foreground underline hover:text-primary-hover font-medium"
+                          className="text-foreground underline hover:text-primary transition-colors font-medium"
                         >
                           Data Privacy Policy
-                        </button>. We only collect your email address for tracking orders. Someone from our team will contact you to finalize and confirm the sale.
+                        </button>.
                       </span>
                     </label>
                   </div>

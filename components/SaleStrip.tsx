@@ -69,6 +69,9 @@ export default function SaleStrip() {
 
         <span className="text-white text-xs sm:text-sm font-semibold truncate">
           {CAMPAIGN.offer}
+          <span className="font-normal opacity-90 ml-1.5 sm:ml-2">
+            | {CAMPAIGN.note}
+          </span>
         </span>
 
         {/*

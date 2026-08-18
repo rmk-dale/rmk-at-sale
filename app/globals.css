@@ -91,3 +91,93 @@
     @apply hover:shadow-lg hover:shadow-[#7a6153]/15 hover:border-[#e2cdb8];
   }
 }
+
+/**
+ * Rendered product descriptions, and the admin editor that composes them.
+ *
+ * Tailwind's preflight resets headings to inherit their size and strips
+ * list markers, which is right for a component library and wrong for a
+ * block of authored prose — without this, an admin's headings and bullets
+ * save correctly, come back correctly, and render as undifferentiated
+ * body text. The same class is applied to the editor surface so the
+ * composing view matches the storefront.
+ *
+ * Scoped to `.rich-text` rather than added to preflight because these are
+ * the only elements in the app whose markup is authored rather than
+ * written as components.
+ */
+@layer components {
+  .rich-text > *:first-child {
+    margin-top: 0;
+  }
+
+  .rich-text > *:last-child {
+    margin-bottom: 0;
+  }
+
+  .rich-text p {
+    margin-block: 0.75rem;
+  }
+
+  .rich-text h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-block: 1.5rem 0.5rem;
+  }
+
+  .rich-text h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.4;
+    margin-block: 1.25rem 0.5rem;
+  }
+
+  .rich-text ul,
+  .rich-text ol {
+    margin-block: 0.75rem;
+    padding-inline-start: 1.5rem;
+  }
+
+  .rich-text ul {
+    list-style: disc;
+  }
+
+  .rich-text ol {
+    list-style: decimal;
+  }
+
+  /* Nested lists switch marker so two levels stay tellable apart. */
+  .rich-text ul ul {
+    list-style: circle;
+  }
+
+  .rich-text li {
+    margin-block: 0.25rem;
+  }
+
+  .rich-text li::marker {
+    color: var(--color-muted);
+  }
+
+  .rich-text strong {
+    font-weight: 600;
+  }
+
+  .rich-text a {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .rich-text a:hover {
+    color: var(--color-primary-hover);
+  }
+
+  /* Highlights are set as a background on a span. Without a little padding
+     they sit flush against the glyphs and read as a rendering fault. */
+  .rich-text span[style*="background-color"] {
+    padding-inline: 0.15em;
+    border-radius: 0.2em;
+  }
+}

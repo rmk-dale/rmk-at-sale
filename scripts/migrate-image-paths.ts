@@ -35,6 +35,9 @@
  * Deliberately self-contained: no `@/` alias imports, so it runs under bare
  * node with no bundler (see the note in scripts/security-checks.ts).
  */
+// Relative, with the extension: scripts/ runs under
+// `node --experimental-strip-types`, which does not read tsconfig paths.
+import { richTextToPlain } from "../lib/richText.ts";
 import { MongoClient, type AnyBulkWriteOperation } from "mongodb";
 import dns from "dns";
 import { readdirSync, readFileSync, existsSync } from "fs";
@@ -294,7 +297,7 @@ async function run(uri: string, index: Map<string, DiskFile[]>) {
     const referenced = new Set<string>();
 
     for (const doc of all) {
-      const label = doc.name || doc.description || doc._id;
+      const label = doc.name || richTextToPlain(doc.description) || doc._id;
       const set: Record<string, unknown> = {};
 
       /** Resolves one path, recording the outcome, and returns what to store. */

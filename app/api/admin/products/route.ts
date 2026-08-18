@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { requireAdmin } from "@/lib/adminGuard";
 import { getAdminProducts, getProductsCollection } from "@/lib/models/product";
 import { parseColors, parseSizes, parseVariants } from "@/lib/productPayload";
+import { isRichTextEmpty, sanitizeRichText } from "@/lib/richText";
 import { invalidateProductCaches } from "@/lib/revalidate";
 import { NO_STORE_CACHE_HEADERS } from "@/lib/httpCache";
 import { recordAudit } from "@/lib/models/auditLog";
@@ -57,6 +58,17 @@ export async function POST(req: NextRequest) {
       );
     }
     if (!description || typeof description !== "string") {
+      return NextResponse.json(
+        { error: "Description is required." },
+        { status: 400 },
+      );
+    }
+    // The authoritative sanitize. The editor cleans pastes and the form
+    // cleans on submit, but both run in a browser we do not control — this
+    // is the pass that decides what actually reaches the database, and so
+    // the storefront.
+    const cleanDescription = sanitizeRichText(description);
+    if (isRichTextEmpty(cleanDescription)) {
       return NextResponse.json(
         { error: "Description is required." },
         { status: 400 },
@@ -124,7 +136,7 @@ export async function POST(req: NextRequest) {
     await products.insertOne({
       _id: newId,
       name,
-      description,
+      description: cleanDescription,
       price,
       originalPrice,
       stock,

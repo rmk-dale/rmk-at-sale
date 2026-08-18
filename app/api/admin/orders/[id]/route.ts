@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { requireAdmin } from "@/lib/adminGuard";
+import { productLabel } from "@/lib/models/product";
 import clientPromise, { getDb } from "@/lib/mongodb";
 import {
   getTransition,
@@ -164,7 +165,10 @@ export async function PATCH(
                 { session },
               );
               throw new RestockUnavailableError(
-                existing?.name ?? existing?.description ?? item.name ?? item.description ?? "Unknown item",
+                (existing ? productLabel(existing) : "") ||
+                  item.name ||
+                  item.description ||
+                  "Unknown item",
                 existing?.stock ?? 0,
               );
             }

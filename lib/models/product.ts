@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/mongodb";
 import { createTTLCache } from "@/lib/cache";
+import { richTextToPlain, toRichText } from "@/lib/richText";
 
 export interface ColorVariant {
   name: string; // e.g. "Sporty Blue"
@@ -42,6 +43,9 @@ export interface ProductDoc {
   // a form, and nothing in the app requires the id to be meaningful.
   _id: string;
   name?: string; // We make this optional for backward compatibility
+  // Rich text (sanitized HTML), or plain text on documents written before
+  // the description editor existed. Read it through `toRichText` — never
+  // render it raw, and never use it as a label; that is `productLabel`.
   description: string;
   price: number;
   originalPrice?: number;
@@ -61,6 +65,9 @@ export interface ProductDoc {
 export interface PublicProduct {
   id: string;
   name: string;
+  /** Sanitized rich-text markup, rendered only by the item detail page.
+   *  Anywhere a plain string is needed — a meta tag, an email, a label —
+   *  run it through `richTextToPlain` or use `name`. */
   description: string;
   price: number;
   originalPrice?: number;
@@ -79,11 +86,36 @@ export async function getProductsCollection() {
   return db.collection<ProductDoc>("products");
 }
 
+/**
+ * The label for a product anywhere outside its own detail page — order
+ * lines, receipt emails, stock errors, the admin inventory list.
+ *
+ * This exists because `description` used to *be* the label. The original
+ * CSV import seeded `name` from a "Description" column, so for a long time
+ * the two were interchangeable and callers reached for whichever was
+ * handy. Now that `description` holds rich text, reaching for it would put
+ * `<p>` tags in a receipt, so every one of those call sites comes here
+ * instead.
+ *
+ * The fallback is kept for documents written before `name` existed. It
+ * returns "" rather than a placeholder when there is nothing to show —
+ * callers know better than this function does what an unnamed product
+ * should be called in their context.
+ */
+export function productLabel(
+  doc: Pick<ProductDoc, "name" | "description">,
+): string {
+  return doc.name?.trim() || richTextToPlain(doc.description);
+}
+
 export function toPublicProduct(doc: ProductDoc): PublicProduct {
   return {
     id: doc._id,
-    name: doc.name || doc.description,
-    description: doc.description,
+    name: productLabel(doc),
+    // Sanitized on the way out as well as on the way in. See the security
+    // note in lib/richText.ts — this is the pass that a payload written
+    // straight to the collection, bypassing the API routes, cannot skip.
+    description: toRichText(doc.description),
     price: doc.price,
     originalPrice: doc.originalPrice,
     stock: doc.stock,

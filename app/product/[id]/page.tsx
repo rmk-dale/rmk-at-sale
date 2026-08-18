@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getPublicProductById } from "@/lib/models/product";
+import { richTextToPlain } from "@/lib/richText";
 import ProductDetail from "@/components/ProductDetail";
 
 /**
@@ -27,7 +28,9 @@ export async function generateMetadata({
   if (!product) return { title: "Item not found | rmk-at-sale" };
   return {
     title: `${product.name} | rmk-at-sale`,
-    description: product.description,
+    // The description is markup now; a meta tag needs the reading of it.
+    // Trimmed to the length search engines actually display.
+    description: richTextToPlain(product.description).slice(0, 160),
   };
 }
 

@@ -346,8 +346,8 @@ export default function CartPage() {
 
               {bundles.ok && bundles.discount === 0 && items.length > 0 && (
                 <p className="text-xs text-muted mb-6 leading-relaxed">
-                  Any item you take exactly {BUNDLE_SIZE} of — mixing sizes and
-                  colours if you like — gets 5% off that item.
+                  Take any {BUNDLE_SIZE} pieces from the same collection and get 5% off the
+                  bundle. Mix and match colours and sizes!
                 </p>
               )}
 

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/adminGuard";
-import { getProductsCollection } from "@/lib/models/product";
+import { getProductsCollection, productLabel } from "@/lib/models/product";
 import { parseColors, parseSizes, parseVariants } from "@/lib/productPayload";
+import { isRichTextEmpty, sanitizeRichText } from "@/lib/richText";
 import { invalidateProductCaches } from "@/lib/revalidate";
 import { NO_STORE_CACHE_HEADERS } from "@/lib/httpCache";
 import { diffFields, recordAudit } from "@/lib/models/auditLog";
@@ -84,7 +85,15 @@ export async function PATCH(
           { status: 400 },
         );
       }
-      update.description = description;
+      // See the note on the create route: this is the sanitize that counts.
+      const cleanDescription = sanitizeRichText(description);
+      if (isRichTextEmpty(cleanDescription)) {
+        return NextResponse.json(
+          { error: "Description cannot be empty." },
+          { status: 400 },
+        );
+      }
+      update.description = cleanDescription;
     }
     if (price !== undefined) {
       if (typeof price !== "number" || !Number.isFinite(price) || price < 0) {
@@ -242,7 +251,7 @@ export async function PATCH(
         action: "product.update",
         targetType: "product",
         targetId: id,
-        targetLabel: previous.name || previous.description,
+        targetLabel: productLabel(previous),
         changes,
         ip: getClientIp(req),
       });

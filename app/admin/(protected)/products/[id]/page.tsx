@@ -8,6 +8,7 @@ import ProductForm, {
   type ProductFormValues,
 } from "@/components/admin/ProductForm";
 import type { ColorVariant, ProductVariant } from "@/lib/models/product";
+import { richTextToPlain, toRichText } from "@/lib/richText";
 
 interface AdminProduct {
   _id: string;
@@ -52,8 +53,11 @@ export default function EditProductPage() {
         if (cancelled) return;
 
         setInitial({
-          name: product.name || product.description || "",
-          description: product.description,
+          // `richTextToPlain`, not `productLabel` — that helper lives in
+          // lib/models/product.ts, which pulls in the MongoDB driver and
+          // cannot be imported by value from a client component.
+          name: product.name || richTextToPlain(product.description) || "",
+          description: toRichText(product.description),
           price: product.price,
           originalPrice: product.originalPrice,
           stock: product.stock,

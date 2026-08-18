@@ -7,6 +7,7 @@ import {
   CUSTOMER_SESSION_COOKIE,
   verifyCustomerSession,
 } from "@/lib/customerSession";
+import { productLabel } from "@/lib/models/product";
 import {
   RATE_LIMITS,
   checkRateLimit,
@@ -297,24 +298,24 @@ export async function POST(req: NextRequest) {
               const known = product.colors.some((c) => c.name === color);
               if (!known) {
                 throw new InvalidVariantError(
-                  `"${color}" is not an available colour for ${product.description}.`,
+                  `"${color}" is not an available colour for ${productLabel(product)}.`,
                 );
               }
             } else if (color && !product.colors?.length) {
               throw new InvalidVariantError(
-                `${product.description} does not come in different colours.`,
+                `${productLabel(product)} does not come in different colours.`,
               );
             }
 
             if (size && product.sizes?.length) {
               if (!product.sizes.includes(size)) {
                 throw new InvalidVariantError(
-                  `"${size}" is not an available size for ${product.description}.`,
+                  `"${size}" is not an available size for ${productLabel(product)}.`,
                 );
               }
             } else if (size && !product.sizes?.length) {
               throw new InvalidVariantError(
-                `${product.description} does not come in different sizes.`,
+                `${productLabel(product)} does not come in different sizes.`,
               );
             }
 
@@ -345,7 +346,7 @@ export async function POST(req: NextRequest) {
             if (activeVariant) {
               if (activeVariant.stock < quantity) {
                 throw new InsufficientStockError(
-                  `${product.description} (${[color, size].filter(Boolean).join(" ")})`,
+                  `${productLabel(product)} (${[color, size].filter(Boolean).join(" ")})`,
                   activeVariant.stock
                 );
               }
@@ -364,7 +365,7 @@ export async function POST(req: NextRequest) {
             } else {
               if (product.stock < quantity) {
                 throw new InsufficientStockError(
-                  product.description,
+                  productLabel(product),
                   product.stock
                 );
               }
@@ -381,9 +382,8 @@ export async function POST(req: NextRequest) {
 
             purchasedItems.push({
               itemCode: id,
-              name: product.name || product.description,
+              name: productLabel(product),
               brand: product.brand,
-              description: product.description,
               quantity,
               price: itemPrice,
               color,
@@ -417,7 +417,7 @@ export async function POST(req: NextRequest) {
             throw new BundleMinimumError(
               bundles.shortGroups.map((group) => {
                 const doc = productsById.get(group.id);
-                return doc?.name || doc?.description || "An item";
+                return (doc ? productLabel(doc) : "") || "An item";
               }),
             );
           }

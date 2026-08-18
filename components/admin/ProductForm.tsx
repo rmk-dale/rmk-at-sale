@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import RichTextEditor from "@/components/admin/RichTextEditor";
+import { isRichTextEmpty, sanitizeRichText } from "@/lib/richText";
 import Image from "next/image";
 import { ImageOff } from "lucide-react";
 import PhotoPicker from "./PhotoPicker";
@@ -116,6 +118,8 @@ export default function ProductForm({
   onSubmit,
 }: ProductFormProps) {
   const [name, setName] = useState(initial?.name ?? "");
+  // Rich-text markup, not plain text. Held raw while typing and sanitized
+  // on submit — see the note in RichTextEditor about caret position.
   const [description, setDescription] = useState(initial?.description ?? "");
   const [price, setPrice] = useState(
     initial?.price !== undefined ? String(initial.price) : "",
@@ -213,6 +217,14 @@ export default function ProductForm({
     e.preventDefault();
     setError("");
 
+    const cleanDescription = sanitizeRichText(description);
+    // Checked after sanitizing, not before: a field holding only markup we
+    // strip (an image, a pasted embed) looks full and saves as empty.
+    if (isRichTextEmpty(cleanDescription)) {
+      setError("Add a description before saving.");
+      return;
+    }
+
     if (!finalImage) {
       setError(
         validColors.length > 0
@@ -236,7 +248,7 @@ export default function ProductForm({
     try {
       await onSubmit({
         name: name.trim(),
-        description: description.trim(),
+        description: cleanDescription,
         price: computedPrice,
         originalPrice: computedOriginalPrice,
         stock: computedStock,
@@ -275,13 +287,15 @@ export default function ProductForm({
           <label className="block text-sm font-medium text-zinc-600 mb-2">
             Description
           </label>
-          <textarea
-            required
+          {/*
+            The only place in the catalog that stores formatted text. It is
+            rendered on the item detail page and nowhere else — the label
+            everything else uses is `name`, one field above.
+          */}
+          <RichTextEditor
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            placeholder="AIRCONIC SPINNER 55/20 TSA SPORTY BLUE"
-            className={inputClass}
+            onChange={setDescription}
+            placeholder="Describe the item — sizes, materials, what's included."
           />
         </div>
 

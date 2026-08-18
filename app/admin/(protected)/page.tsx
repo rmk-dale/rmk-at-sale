@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Plus, ShoppingBag } from "lucide-react";
-import { getAdminProducts } from "@/lib/models/product";
+import { getAdminProducts, productLabel } from "@/lib/models/product";
 
 /**
  * Inventory list — a Server Component on purpose.
@@ -87,7 +87,7 @@ export default async function AdminInventoryPage() {
                   </td>
                   <td className="px-5 py-3 text-zinc-900">
                     <div className="flex items-center gap-2">
-                      {product.name || product.description}
+                      {productLabel(product)}
                       {product.featured && (
                         <span className="bg-yellow-100 text-yellow-800 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded">
                           Featured

@@ -429,9 +429,26 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wide mb-3">
               Details
             </h2>
-            <p className="text-foreground leading-relaxed">
-              {product.description}
-            </p>
+            {/*
+              The one place in the app that renders stored markup.
+
+              `dangerouslySetInnerHTML` is doing exactly what its name warns
+              about, so the safety has to come from the value: this string
+              was sanitized against an allowlist when the admin saved it,
+              and sanitized again by `toPublicProduct` on the way out of the
+              cache. Rendering anything here that has not been through
+              `lib/richText.ts` is a stored-XSS bug — the field is
+              admin-writable and shopper-visible, which is the whole shape
+              of that vulnerability.
+
+              The `.rich-text` class is what gives headings, lists and
+              alignment their appearance back; Tailwind's preflight strips
+              them all by default. See app/globals.css.
+            */}
+            <div
+              className="rich-text text-foreground leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: product.description }}
+            />
           </div>
         )}
       </div>

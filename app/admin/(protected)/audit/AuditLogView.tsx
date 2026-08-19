@@ -37,6 +37,7 @@ const ACTION_LABELS: Record<string, string> = {
   "admin.invite": "invited admin",
   "admin.update": "updated admin",
   "admin.sessions_revoked": "signed out all sessions for",
+  "admin.order_notify_change": "changed order notifications to",
   "order.status_change": "changed order status",
 };
 

@@ -189,6 +189,159 @@ export async function sendReceiptEmail(
 }
 
 /**
+ * Tells the assigned admin that an order has come in.
+ *
+ * Sent to exactly one address — whichever active admin has the
+ * `notifyOnNewOrder` flag, resolved by `getOrderNotifyRecipient()`. This is
+ * an internal, staff-facing mail: it deliberately carries the buyer's
+ * address and the full line detail so the team can act on it straight from
+ * their inbox without opening the panel first.
+ *
+ * Everything interpolated below originates from a shopper's request body —
+ * item names come from the catalogue, but colour, size and the buyer's own
+ * email do not — and this is a raw HTML string with none of React's
+ * escaping, so every dynamic value goes through `escapeHtml`.
+ *
+ * No campaign banner and no marketing furniture: this is a work
+ * notification, and the plainer it is the faster it reads on a phone.
+ *
+ * @param to - The assigned admin's address.
+ * @param order - The committed order, exactly as recorded.
+ * @param adminOrdersUrl - Deep link into the admin orders screen.
+ */
+export async function sendNewOrderAdminEmail(
+  to: string,
+  order: {
+    orderNumber: string;
+    buyerEmail: string;
+    items: Array<{
+      name: string;
+      brand?: string;
+      quantity: number;
+      price: number;
+      color?: string;
+      size?: string;
+    }>;
+    subtotal: number;
+    bundleDiscount: number;
+    total: number;
+  },
+  adminOrdersUrl: string,
+): Promise<void> {
+  const safeOrderNumber = escapeHtml(order.orderNumber);
+  const safeBuyerEmail = escapeHtml(order.buyerEmail);
+  const totalUnits = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
+  const rowsHtml = order.items
+    .map((item) => {
+      const variantParts: string[] = [];
+      if (item.color) variantParts.push(`Color: ${escapeHtml(item.color)}`);
+      if (item.size) variantParts.push(`Size: ${escapeHtml(item.size)}`);
+      const variantInfo = variantParts.length
+        ? `<br/><span style="color:#71717a;font-size:13px;">${variantParts.join(" | ")}</span>`
+        : "";
+      const brandInfo = item.brand
+        ? `<br/><span style="color:#71717a;font-size:13px;">Collection Name: ${escapeHtml(item.brand)}</span>`
+        : "";
+      return `<tr>
+        <td style="padding:10px 0;border-bottom:1px solid #e4e4e7;vertical-align:top;">
+          <span style="font-weight:500;">${escapeHtml(item.name)}</span>${brandInfo}${variantInfo}
+        </td>
+        <td style="padding:10px 0;border-bottom:1px solid #e4e4e7;text-align:center;vertical-align:top;white-space:nowrap;">${item.quantity}</td>
+        <td style="padding:10px 0;border-bottom:1px solid #e4e4e7;text-align:right;vertical-align:top;white-space:nowrap;">₱${(item.price * item.quantity).toFixed(2)}<br/><span style="color:#71717a;font-size:13px;">₱${item.price.toFixed(2)} ea</span></td>
+      </tr>`;
+    })
+    .join("");
+
+  // Same rule as the receipt: a "₱0.00" discount line reads as a discount
+  // that failed rather than one that was never earned.
+  const discountApplied = order.bundleDiscount > 0;
+
+  const discountRow = discountApplied
+    ? `<tr>
+        <td style="padding:4px 0;color:#047857;">Bundle discount</td>
+        <td style="padding:4px 0;text-align:right;color:#047857;">−₱${order.bundleDiscount.toFixed(2)}</td>
+      </tr>`
+    : "";
+
+  const textLines = order.items.map((item) => {
+    const variant = [item.color, item.size].filter(Boolean).join(" ");
+    return `  ${item.quantity}x ${item.name}${variant ? ` (${variant})` : ""} — ₱${(item.price * item.quantity).toFixed(2)}`;
+  });
+
+  const mailOptions = {
+    from: `"rmk-at-sale" <${process.env.SMTP_USER}>`,
+    to,
+    subject: `New order ${order.orderNumber} — ₱${order.total.toFixed(2)}`,
+    // The buyer's address is set as Reply-To rather than From, so hitting
+    // reply in a mail client goes straight to the customer. `from` stays
+    // the store's own authenticated mailbox — spoofing the buyer's domain
+    // there would fail SPF and land the notification in spam.
+    replyTo: order.buyerEmail,
+    text:
+      `New order ${order.orderNumber}\n\n` +
+      `Buyer: ${order.buyerEmail}\n` +
+      `Items (${totalUnits} pcs):\n${textLines.join("\n")}\n\n` +
+      (discountApplied
+        ? `Subtotal: ₱${order.subtotal.toFixed(2)}\nBundle discount: -₱${order.bundleDiscount.toFixed(2)}\n`
+        : "") +
+      `Total: ₱${order.total.toFixed(2)}\n\n` +
+      `Manage this order: ${adminOrdersUrl}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <img src="cid:logo" alt="RMK at Sale" style="width: 120px;" />
+        </div>
+        <h2 style="margin-bottom: 4px;">New order received</h2>
+        <p style="color:#52525b;margin-top:0;">Someone needs to contact this buyer to finalize the order.</p>
+        <p style="background:#f4f4f5;padding:12px 16px;border-radius:8px;">
+          Order reference: <strong style="font-family:monospace;">${safeOrderNumber}</strong><br />
+          Buyer: <a href="mailto:${safeBuyerEmail}" style="color:#4f46e5;">${safeBuyerEmail}</a>
+        </p>
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding-bottom:6px;color:#71717a;font-size:13px;font-weight:500;">Item</th>
+              <th style="text-align:center;padding-bottom:6px;color:#71717a;font-size:13px;font-weight:500;">Qty</th>
+              <th style="text-align:right;padding-bottom:6px;color:#71717a;font-size:13px;font-weight:500;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <table style="width:100%;margin-top:16px;border-collapse:collapse;">
+          <tr>
+            <td style="padding:4px 0;color:#52525b;">Subtotal</td>
+            <td style="padding:4px 0;text-align:right;color:#52525b;">₱${order.subtotal.toFixed(2)}</td>
+          </tr>
+          ${discountRow}
+          <tr>
+            <td style="padding:10px 0 0;border-top:1px solid #e4e4e7;font-size:18px;font-weight:600;">Total</td>
+            <td style="padding:10px 0 0;border-top:1px solid #e4e4e7;text-align:right;font-size:18px;font-weight:600;">₱${order.total.toFixed(2)}</td>
+          </tr>
+        </table>
+        <p style="margin-top:24px;">
+          <a href="${escapeHtml(adminOrdersUrl)}" style="color:#4f46e5;">Open this order in the admin panel</a>
+        </p>
+        <p style="color:#71717a;font-size:13px;">
+          You're receiving this because order notifications are assigned to you in the Admins tab.
+        </p>
+      </div>
+    `,
+    attachments: [
+      {
+        // One fully literal path, per the rule at the top of
+        // sendReceiptEmail. Do not factor this into a helper.
+        filename: "rwithtag.png",
+        path: path.join(process.cwd(), "public", "rwithtag.png"),
+        cid: "logo",
+      },
+    ],
+  };
+
+  await transporter.sendMail(mailOptions);
+}
+
+/**
  * Invites someone to become an admin. The link carries a one-time token
  * (not a password) that lets them set their own password and enroll 2FA.
  */

@@ -33,6 +33,15 @@ export type AuditAction =
   | "admin.invite"
   | "admin.update"
   | "admin.sessions_revoked"
+  /**
+   * Reassignment of the single "email me every new order" flag. Kept
+   * separate from `admin.update` because it is the one admin change whose
+   * effect lands on a *different* account — turning it on for one person
+   * turns it off for whoever held it — and an entry that named only the
+   * winner would leave no record of why the previous holder stopped
+   * receiving order mail. Both usernames are in the entry's `changes`.
+   */
+  | "admin.order_notify_change"
   | "order.status_change";
 
 export type AuditTargetType = "product" | "brand" | "admin" | "order";

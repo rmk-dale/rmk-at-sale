@@ -34,6 +34,16 @@ export interface AdminDoc {
    * which is why every read treats `undefined` as 0.
    */
   sessionEpoch?: number;
+  /**
+   * Set on exactly one admin at a time: the person who receives an email
+   * every time an order is placed. Exclusivity is enforced by the PATCH
+   * route, which sets it here and clears it everywhere else inside one
+   * transaction — see app/api/admin/admins/[id]/route.ts.
+   *
+   * Absent on every account created before this field existed, which is
+   * why the lookup below matches `true` explicitly.
+   */
+  notifyOnNewOrder?: boolean;
   invitedBy?: ObjectId;
   inviteTokenHash?: string; // hash of the current outstanding invite/reset token
   inviteTokenExpires?: Date;
@@ -66,6 +76,40 @@ export function toPublicAdmin(doc: AdminDoc) {
     role: doc.role,
     status: doc.status,
     twoFactorEnabled: doc.twoFactorEnabled,
+    // Normalised to a boolean so the toggle in the admins table is never
+    // driven by `undefined` and can stay a controlled input.
+    notifyOnNewOrder: doc.notifyOnNewOrder === true,
     createdAt: doc.createdAt,
   };
+}
+
+/**
+ * The admin who should be emailed when an order is placed, or null if
+ * nobody is assigned.
+ *
+ * Deliberately NOT cached. This runs once per order, in the `after()` block
+ * of the checkout route — after the transaction has committed and after the
+ * response has been sent. One `findOne` at order rate is far below anything
+ * the M0 ops budget cares about, and a TTL cache would only buy staleness:
+ * a per-container cache is invisible to the container that handled the
+ * toggle, so an owner reassigning notifications would watch mail keep
+ * arriving at the old address for the length of the TTL.
+ *
+ * `status: "active"` is part of the filter as a second line of defence.
+ * Disabling an admin already clears this flag (see the PATCH route), so a
+ * disabled account should never match — but if a flag is ever left behind
+ * by a direct database edit, a revoked account still does not receive
+ * order mail.
+ */
+export async function getOrderNotifyRecipient(): Promise<{
+  email: string;
+  username: string;
+} | null> {
+  const admins = await getAdminsCollection();
+  const recipient = await admins.findOne(
+    { notifyOnNewOrder: true, status: "active" },
+    { projection: { email: 1, username: 1 } },
+  );
+  if (!recipient) return null;
+  return { email: recipient.email, username: recipient.username };
 }

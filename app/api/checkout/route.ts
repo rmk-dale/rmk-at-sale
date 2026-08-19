@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { cookies } from "next/headers";
 import { ObjectId, type AnyBulkWriteOperation } from "mongodb";
-import { sendReceiptEmail } from "@/lib/email";
+import { sendNewOrderAdminEmail, sendReceiptEmail } from "@/lib/email";
+import { getOrderNotifyRecipient } from "@/lib/models/admin";
 import clientPromise, { getDb } from "@/lib/mongodb";
 import {
   CUSTOMER_SESSION_COOKIE,
@@ -569,6 +570,51 @@ export async function POST(req: NextRequest) {
         console.error(
           `[checkout] Order ${receiptOrderNumber} committed but the receipt email failed:`,
           emailError,
+        );
+      }
+
+      // Notify whichever admin is assigned in the Admins tab.
+      //
+      // Deliberately a second, separate try/catch rather than another
+      // statement in the one above: the shopper's receipt is the more
+      // important of the two, and a thrown SMTP error on this send must
+      // not be able to prevent it. Sequenced after it for the same reason.
+      //
+      // The recipient lookup is one uncached `findOne` per order, which is
+      // fine here — this runs after the response, outside the transaction,
+      // at order rate rather than request rate. See the note on
+      // `getOrderNotifyRecipient` for why caching it would be a
+      // regression rather than an optimisation.
+      try {
+        const recipient = await getOrderNotifyRecipient();
+        if (!recipient) {
+          // Not an error: nobody is assigned. Logged anyway, because
+          // "orders are arriving and no human is being told" is a state
+          // worth being able to find after the fact.
+          console.warn(
+            `[checkout] Order ${receiptOrderNumber}: no admin is assigned to receive order notifications.`,
+          );
+          return;
+        }
+
+        const appUrl = process.env.APP_URL || "https://rmk-at-sale.vercel.app";
+
+        await sendNewOrderAdminEmail(
+          recipient.email,
+          {
+            orderNumber: receiptOrderNumber,
+            buyerEmail: email,
+            items: receiptItems,
+            subtotal: receiptBreakdown.subtotal,
+            bundleDiscount: receiptBreakdown.bundleDiscount,
+            total: receiptTotal,
+          },
+          `${appUrl}/admin/orders`,
+        );
+      } catch (notifyError) {
+        console.error(
+          `[checkout] Order ${receiptOrderNumber} committed but the admin notification failed:`,
+          notifyError,
         );
       }
     });

@@ -194,21 +194,19 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
 
   /*
     One line under the CTA, describing where this add leaves the product's
-    group. Only the states a shopper can act on are worth a sentence — a
-    group already past three has nothing useful to be told, since the
-    discount is earned at exactly three and the cart does not ask anyone to
-    buy less.
+    group. The discount is a floor of `BUNDLE_SIZE` rather than an exact
+    count, so every state at or above it is the same good news and no add
+    can take the 5% away — which is why the old "past three, say nothing"
+    branch is gone.
   */
   const bundleHint =
     !cartReady || !canAdd
       ? null
       : projectedQuantity < MIN_UNITS_PER_PRODUCT
         ? `Minimum ${MIN_UNITS_PER_PRODUCT} pieces per item — you can mix sizes and colours.`
-        : projectedQuantity === BUNDLE_SIZE
-          ? `That makes a ${BUNDLE_SIZE}-piece bundle — 5% off this item.`
-          : projectedQuantity < BUNDLE_SIZE
-            ? `Take ${BUNDLE_SIZE - projectedQuantity} more of this item for a ${BUNDLE_SIZE}-piece bundle and 5% off.`
-            : null;
+        : projectedQuantity >= BUNDLE_SIZE
+          ? `That's ${projectedQuantity} pieces of this item — 5% off the bundle.`
+          : `Take ${BUNDLE_SIZE - projectedQuantity} more of this item to reach ${BUNDLE_SIZE} and save 5%.`;
 
   const buttonClass =
     "w-full bg-primary text-white py-3.5 rounded-xl font-medium hover:bg-primary-hover transition-all transform active:scale-95 motion-reduce:transform-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100";
@@ -410,7 +408,7 @@ export default function ProductDetail({ product }: { product: PublicProduct }) {
                 ) : bundleHint ? (
                   <p
                     className={`text-xs leading-relaxed ${
-                      projectedQuantity === BUNDLE_SIZE
+                      projectedQuantity >= BUNDLE_SIZE
                         ? "text-emerald-700 font-medium"
                         : "text-muted"
                     }`}

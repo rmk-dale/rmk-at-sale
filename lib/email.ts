@@ -98,8 +98,8 @@ export async function sendOTPEmail(to: string, otp: string): Promise<void> {
  * @param items - The purchased lines, priced at the variant price.
  * @param orderNumber - The order's tracking reference.
  * @param breakdown - Subtotal and bundle discount. Omitted, the receipt
- *   shows a single total line, which is what an order with no qualifying
- *   3-piece bundle should look like.
+ *   shows a single total line, which is what an order where no product
+ *   reached the bundle threshold should look like.
  */
 export async function sendReceiptEmail(
   to: string,
@@ -141,7 +141,7 @@ export async function sendReceiptEmail(
           <td style="padding:4px 0;text-align:right;color:#52525b;">₱${breakdown!.subtotal.toFixed(2)}</td>
         </tr>
         <tr>
-          <td style="padding:4px 0;color:#047857;">Bundle discount (5% per 3-piece bundle)</td>
+          <td style="padding:4px 0;color:#047857;">Bundle discount (5% off 3 or more of an item)</td>
           <td style="padding:4px 0;text-align:right;color:#047857;">−₱${breakdown!.bundleDiscount.toFixed(2)}</td>
         </tr>
         <tr>

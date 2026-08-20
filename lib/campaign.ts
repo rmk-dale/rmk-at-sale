@@ -13,7 +13,7 @@
  */
 export const CAMPAIGN = {
   name: "Mega Bundeals",
-  offer: "Extra 5% off 3-piece bundles",
+  offer: "Extra 5% off 3 or more of the same item",
   note: "NOTE: Items are sold in bundles only, with a minimum purchase of 2 pieces.",
 
   /** Human-readable window, used in the accessible page heading. */

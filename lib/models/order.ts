@@ -61,7 +61,9 @@ export interface OrderDoc {
   subtotal?: number;
   /**
    * Total taken off by the bundle rules — 5% of the subtotal of every
-   * product group holding exactly three units, summed.
+   * product group holding three units or more, summed. (Orders placed
+   * before 2026-08-20 were discounted only at exactly three, so a stored
+   * figure is what that order's rules produced, not what today's would.)
    *
    * Recorded here rather than folded into `OrderItem.price` on purpose. A
    * line's `price` is the variant price the shopper was actually quoted,

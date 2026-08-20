@@ -11,12 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCartStore, cartLineId, type CartItem } from "@/lib/store";
-import {
-  BUNDLE_SIZE,
-  MAX_QUANTITY_PER_LINE,
-  MIN_UNITS_PER_PRODUCT,
-  type BundleGroup,
-} from "@/lib/validation";
+import { MAX_QUANTITY_PER_LINE } from "@/lib/validation";
 // From lib/productImages, not lib/models/product: that module imports
 // getDb, so a value import from it would pull the MongoDB driver into the
 // client bundle. The type import below is erased and stays safe.
@@ -30,16 +25,14 @@ interface CartLineProps {
   /** `compact` is the drawer; `full` is the cart page. */
   variant?: "compact" | "full";
   /**
-   * The bundle standing of this line's *product*, counting every line of
-   * it in the cart. Passed in rather than derived here because the rule is
-   * about the whole cart and a line only ever sees itself.
+   * Whether the line prints the product's name.
+   *
+   * False inside a `CartGroup`, whose header already names the product —
+   * repeating it above every size reads as three different products. The
+   * name is still used for the aria-labels either way, so a screen reader
+   * never hears a bare "Remove".
    */
-  group?: BundleGroup;
-  /**
-   * Whether this line renders the group's notice. True for one line per
-   * product — see `groupLeadLineIds` in lib/store.ts.
-   */
-  showGroupNotice?: boolean;
+  showName?: boolean;
 }
 
 /**
@@ -56,8 +49,7 @@ export default function CartLine({
   item,
   product,
   variant = "compact",
-  group,
-  showGroupNotice = false,
+  showName = true,
 }: CartLineProps) {
   const { updateQuantity, removeItem, addItem } = useCartStore();
   const [editing, setEditing] = useState(false);
@@ -124,7 +116,7 @@ export default function CartLine({
       className={
         compact
           ? "flex items-start gap-4"
-          : "flex flex-col sm:flex-row sm:items-center gap-5 bg-surface p-5 rounded-2xl border border-border"
+          : "flex flex-col sm:flex-row sm:items-center gap-5"
       }
     >
       <div
@@ -144,15 +136,19 @@ export default function CartLine({
       </div>
 
       <div className="flex-grow min-w-0">
-        <p
-          className={`font-medium text-foreground ${compact ? "text-sm truncate" : "text-base"}`}
-        >
-          {item.name}
-        </p>
+        {showName && (
+          <p
+            className={`font-medium text-foreground ${compact ? "text-sm truncate" : "text-base"}`}
+          >
+            {item.name}
+          </p>
+        )}
 
         {/* The variant, shown rather than spelled out. */}
         {(item.color || item.size) && (
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
+          <div
+            className={`flex items-center gap-2 flex-wrap ${showName ? "mt-1" : ""}`}
+          >
             {item.color && (
               <span className="flex items-center gap-1.5 text-xs text-muted">
                 <span
@@ -221,44 +217,11 @@ export default function CartLine({
         )}
 
         {/*
-          The bundle notices. Rendered on one line per product — the group
-          spans every line of it, so repeating this under each size would
-          say the same thing three times.
-
-          The three states are mutually exclusive by construction: a group
-          is either below the minimum, sitting exactly on a bundle, or
-          neither. Note that `toBundle` is 0 for a group past three, so a
-          shopper holding four is never told to buy more; telling them to
-          buy *less* to qualify is a conversation this cart doesn't start.
+          The bundle notices used to live here, on one nominated line per
+          product. They belong to the group, so they moved to `CartGroup`'s
+          header — a line only ever sees itself and cannot say anything
+          true about the other two sizes sitting next to it.
         */}
-        {showGroupNotice && group && !group.meetsMinimum && (
-          <p className="flex items-start gap-1.5 text-xs text-primary font-medium mt-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
-            <span>
-              Minimum {MIN_UNITS_PER_PRODUCT} pieces of this item. Add{" "}
-              {group.shortfall} more — any size or colour counts.
-            </span>
-          </p>
-        )}
-        {showGroupNotice && group?.discounted && (
-          <p className="flex items-start gap-1.5 text-xs text-emerald-700 font-medium mt-1.5">
-            <Check className="w-3.5 h-3.5 shrink-0 mt-px" />
-            <span>
-              {BUNDLE_SIZE}-piece bundle — 5% off, saving ₱
-              {group.discount.toFixed(2)}
-            </span>
-          </p>
-        )}
-        {showGroupNotice &&
-          group &&
-          group.meetsMinimum &&
-          !group.discounted &&
-          group.toBundle > 0 && (
-            <p className="text-xs text-muted mt-1.5">
-              Add {group.toBundle} more to make it a {BUNDLE_SIZE}-piece bundle
-              and save 5%.
-            </p>
-          )}
 
         {editing && product && (
           <div className="mt-3 p-3 rounded-xl bg-background border border-border space-y-3">

@@ -185,7 +185,15 @@ export function validateCartItems(input: unknown): CartValidation {
  */
 export const MIN_UNITS_PER_PRODUCT = 2;
 
-/** A "bundle" is exactly this many units of one product. */
+/**
+ * A "bundle" is this many units of one product — or more.
+ *
+ * This was an equality until 2026-08-20: exactly three earned the 5%, and a
+ * fourth piece forfeited it. It is a floor now, so the discount comes off
+ * the whole group from three units upward and adding to a qualifying group
+ * can never cost a shopper money. Nothing else about the rules moved: the
+ * unit is still the product, and colour and size still never split a group.
+ */
 export const BUNDLE_SIZE = 3;
 
 /** What a bundle takes off that product's subtotal. */
@@ -225,15 +233,16 @@ export interface BundleGroup {
   subtotal: number;
   discount: number;
   total: number;
-  /** True when the group sits at exactly `BUNDLE_SIZE` and earned the 5%. */
+  /** True when the group holds `BUNDLE_SIZE` units or more and earned the 5%. */
   discounted: boolean;
   meetsMinimum: boolean;
   /** Units still needed to reach the minimum; 0 once it is met. */
   shortfall: number;
   /**
-   * Units that would take this group to exactly `BUNDLE_SIZE`; 0 if it is
-   * already there, and 0 past it — a group of 4 cannot reach a bundle by
-   * adding, only by removing, and the UI does not push shoppers to buy less.
+   * Units still needed to earn the discount; 0 once the group has it.
+   *
+   * Only ever a number to *add*. A group at or past `BUNDLE_SIZE` is
+   * already discounted, so there is nothing to suggest.
    */
   toBundle: number;
 }
@@ -262,11 +271,12 @@ export interface BundleEvaluation {
  * The rules, in full:
  *   - Lines are grouped by product id. Colour and size never split a group.
  *   - A group below `MIN_UNITS_PER_PRODUCT` blocks the order.
- *   - A group of *exactly* `BUNDLE_SIZE` takes `BUNDLE_DISCOUNT_RATE` off
- *     that group's subtotal. Two, four, five — nothing. The discount is a
- *     spike, not a floor, and that is deliberate.
+ *   - A group of `BUNDLE_SIZE` units *or more* takes `BUNDLE_DISCOUNT_RATE`
+ *     off that group's whole subtotal. Three, four, ten — all 5%, and the
+ *     rate does not climb: it is a floor, not a ladder.
  *   - Groups are independent: two products at three units each earn two
- *     separate discounts.
+ *     separate discounts, and a group of two next to a group of three
+ *     leaves the two undiscounted.
  */
 export function evaluateBundles(
   lines: readonly BundleLine[],
@@ -308,7 +318,7 @@ export function evaluateBundles(
   let discountCentavos = 0;
 
   for (const entry of accumulated.values()) {
-    const discounted = entry.quantity === BUNDLE_SIZE;
+    const discounted = entry.quantity >= BUNDLE_SIZE;
     const groupDiscount = discounted
       ? Math.round(entry.centavos * BUNDLE_DISCOUNT_RATE)
       : 0;
@@ -344,6 +354,55 @@ export function evaluateBundles(
     shortGroups,
     ok: shortGroups.length === 0,
   };
+}
+
+/** One product's lines, in the order they were given. */
+export interface LineGrouping<T> {
+  /** The product id every line here shares. */
+  id: string;
+  lines: T[];
+  /** Units across those lines, counted exactly as `evaluateBundles` counts. */
+  quantity: number;
+}
+
+/**
+ * Gathers lines by product id — the display half of the bundle rules.
+ *
+ * `evaluateBundles` decides the money for a group; this decides which
+ * lines the shopper is shown as that group. They live in the same module
+ * on purpose: three pieces of one bag can occupy three cart lines with
+ * another product between them, and if the two functions ever grouped
+ * differently the cart would show a discount attached to the wrong block.
+ *
+ * The one deliberate difference is junk. `evaluateBundles` drops a line
+ * with no id or a nonsensical quantity, because such a line cannot be
+ * priced. This keeps it, because a line that renders nowhere is a line the
+ * shopper cannot delete — it is simply counted as zero units.
+ */
+export function groupLinesByProduct<T extends { id: string; quantity: number }>(
+  lines: readonly T[],
+): LineGrouping<T>[] {
+  const groups: LineGrouping<T>[] = [];
+  const byProduct = new Map<string, LineGrouping<T>>();
+
+  for (const line of lines) {
+    if (!line) continue;
+    const id = line.id ?? "";
+    const units = Math.max(0, Math.floor(Number(line.quantity) || 0));
+    const existing = byProduct.get(id);
+
+    if (existing) {
+      existing.lines.push(line);
+      existing.quantity += units;
+      continue;
+    }
+
+    const group: LineGrouping<T> = { id, lines: [line], quantity: units };
+    byProduct.set(id, group);
+    groups.push(group);
+  }
+
+  return groups;
 }
 
 /**

@@ -22,6 +22,7 @@ import {
   MIN_UNITS_PER_PRODUCT,
   bundleMinimumMessage,
   evaluateBundles,
+  groupLinesByProduct,
 } from "../lib/validation.ts";
 
 let failed = 0;
@@ -42,7 +43,7 @@ function section(title: string) {
 // ---------------------------------------------------------------------------
 
 section(
-  `1. The quantity ladder — one product at ₱1000, minimum ${MIN_UNITS_PER_PRODUCT}, bundle at exactly ${BUNDLE_SIZE}`,
+  `1. The quantity ladder — one product at ₱1000, minimum ${MIN_UNITS_PER_PRODUCT}, bundle from ${BUNDLE_SIZE} up`,
 );
 
 const ladder: Array<{
@@ -54,10 +55,10 @@ const ladder: Array<{
   { quantity: 1, total: 1000, discount: 0, ok: false },
   { quantity: 2, total: 2000, discount: 0, ok: true },
   { quantity: 3, total: 2850, discount: 150, ok: true },
-  { quantity: 4, total: 4000, discount: 0, ok: true },
-  { quantity: 5, total: 5000, discount: 0, ok: true },
-  { quantity: 6, total: 6000, discount: 0, ok: true },
-  { quantity: 7, total: 7000, discount: 0, ok: true },
+  { quantity: 4, total: 3800, discount: 200, ok: true },
+  { quantity: 5, total: 4750, discount: 250, ok: true },
+  { quantity: 6, total: 5700, discount: 300, ok: true },
+  { quantity: 7, total: 6650, discount: 350, ok: true },
 ];
 
 for (const row of ladder) {
@@ -73,19 +74,48 @@ for (const row of ladder) {
   );
 }
 
-// The property that makes "exactly 3" what it is, stated on its own so a
-// future change to a threshold or a per-pack rule fails here loudly.
+// The three properties that define the threshold as a floor. The rule was
+// an equality until 2026-08-20 — a fourth piece used to forfeit the
+// discount — so these are stated on their own to make a regression to that
+// behaviour, or a drift into per-pack or tiered rates, fail loudly.
 const four = evaluateBundles([{ id: "A", quantity: 4, price: 1000 }]);
 check(
-  "a fourth piece removes the discount entirely (not 3 discounted + 1 full)",
-  four.discount === 0 && four.total === 4000,
-  `got ₱${four.total.toFixed(2)}`,
+  "a fourth piece keeps the discount, applied to all four",
+  four.discount === 200 && four.total === 3800,
+  `got total ₱${four.total.toFixed(2)}, discount ₱${four.discount.toFixed(2)}`,
 );
 const six = evaluateBundles([{ id: "A", quantity: 6, price: 1000 }]);
 check(
-  "six is not treated as two bundles",
-  six.discount === 0,
+  "six is one 5%, not two bundles' worth of rate",
+  six.discount === 300,
   `got discount ₱${six.discount.toFixed(2)}`,
+);
+
+// Monotonicity: no quantity a shopper can reach is worse for them than the
+// one below it. This is the property "exactly 3" did not have.
+let payLessNeverBySpendingMore = true;
+let discountNeverShrinks = true;
+for (let quantity = MIN_UNITS_PER_PRODUCT; quantity < 24; quantity++) {
+  const here = evaluateBundles([{ id: "A", quantity, price: 749.95 }]);
+  const next = evaluateBundles([{ id: "A", quantity: quantity + 1, price: 749.95 }]);
+  if (next.total < here.total) payLessNeverBySpendingMore = false;
+  if (next.discount + 1e-9 < here.discount) discountNeverShrinks = false;
+}
+check(
+  "adding a piece never lowers what the shopper pays",
+  payLessNeverBySpendingMore,
+);
+check("adding a piece never shrinks the discount", discountNeverShrinks);
+
+// The discounted flag is the floor, not a window.
+const flags = [2, 3, 4, 11].map(
+  (quantity) =>
+    evaluateBundles([{ id: "A", quantity, price: 10 }]).groups[0].discounted,
+);
+check(
+  "discounted is false below the threshold and true at and above it",
+  flags[0] === false && flags[1] && flags[2] && flags[3],
+  `got ${flags.join(", ")}`,
 );
 
 // ---------------------------------------------------------------------------
@@ -144,6 +174,20 @@ const twoBundles = evaluateBundles([
   { id: "B", quantity: 3, price: 500 },
 ]);
 eq("two qualifying products earn two discounts", twoBundles.discount, 225);
+
+// A group past the threshold beside one that has not reached it: the
+// discount is the big group's alone, and the small one is untouched.
+const bigAndSmall = evaluateBundles([
+  { id: "A", quantity: 5, price: 1000 },
+  { id: "B", quantity: 2, price: 500 },
+]);
+eq("subtotal spans both", bigAndSmall.subtotal, 6000);
+eq("only the group of five is discounted", bigAndSmall.discount, 250);
+check(
+  "the group of two earns nothing from its neighbour",
+  bigAndSmall.byProduct.get("B")?.discount === 0 &&
+    bigAndSmall.byProduct.get("B")?.discounted === false,
+);
 
 // ---------------------------------------------------------------------------
 
@@ -225,7 +269,7 @@ for (let quantity = 1; quantity <= 12; quantity++) {
   for (const price of [0.01, 0.07, 1, 19.99, 33.33, 249.5, 1000, 8999.95]) {
     const result = evaluateBundles([{ id: "A", quantity, price }]);
     const expectedDiscount =
-      quantity === BUNDLE_SIZE
+      quantity >= BUNDLE_SIZE
         ? Math.round(Math.round(price * 100) * quantity * BUNDLE_DISCOUNT_RATE) /
           100
         : 0;
@@ -267,6 +311,58 @@ check(
   "an empty cart is vacuously ok (emptiness is validateCartItems' job)",
   empty.ok && empty.total === 0 && empty.groups.length === 0,
 );
+
+// ---------------------------------------------------------------------------
+
+section("8. Display grouping agrees with the money grouping");
+
+// The cart renders one block per product from `groupLinesByProduct` and
+// prices that block from `evaluateBundles`. If the two ever key groups
+// differently, the discount is announced on the wrong block.
+const interleaved = [
+  { id: "A", quantity: 1, price: 100, tag: "a-blue" },
+  { id: "B", quantity: 2, price: 50, tag: "b-red" },
+  { id: "A", quantity: 1, price: 100, tag: "a-red" },
+  { id: "A", quantity: 1, price: 100, tag: "a-green" },
+];
+const displayed = groupLinesByProduct(interleaved);
+const priced = evaluateBundles(interleaved);
+
+eq("one block per product", displayed.length, priced.groups.length);
+check(
+  "blocks and priced groups appear in the same order, keyed the same",
+  displayed.every((g, i) => g.id === priced.groups[i].id),
+  displayed.map((g) => g.id).join(",") +
+    " vs " +
+    priced.groups.map((g) => g.id).join(","),
+);
+check(
+  "every block's unit count matches the group it is priced by",
+  displayed.every((g) => g.quantity === priced.byProduct.get(g.id)?.quantity),
+);
+eq("interleaved lines are pulled into one block", displayed[0].lines.length, 3);
+check(
+  "and they keep the order the cart holds them in",
+  displayed[0].lines.map((l) => l.tag).join(",") === "a-blue,a-red,a-green",
+  displayed[0].lines.map((l) => l.tag).join(","),
+);
+check(
+  "the block that earns the 5% is the one holding three lines",
+  priced.byProduct.get("A")?.discounted === true &&
+    priced.byProduct.get("B")?.discounted === false,
+);
+
+// Junk diverges deliberately: a line the money ignores must still render,
+// or the shopper has no way to remove it.
+const junkLines = [
+  { id: "A", quantity: 2 },
+  { id: "A", quantity: Number.NaN },
+  { id: "", quantity: 3 },
+];
+const junkDisplayed = groupLinesByProduct(junkLines);
+eq("a blank-id line still gets a block to live in", junkDisplayed.length, 2);
+eq("an unusable quantity still renders as a line", junkDisplayed[0].lines.length, 2);
+eq("but contributes no units", junkDisplayed[0].quantity, 2);
 
 // ---------------------------------------------------------------------------
 

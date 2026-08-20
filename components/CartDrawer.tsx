@@ -2,15 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import {
-  useCartStore,
-  cartLineId,
-  evaluateCart,
-  groupLeadLineIds,
-} from "@/lib/store";
+import { useCartStore, evaluateCart, groupCartLines } from "@/lib/store";
 import { useCatalog } from "@/lib/useCatalog";
 import { useHydrated } from "@/lib/useHydrated";
-import CartLine from "@/components/CartLine";
+import CartGroup from "@/components/CartGroup";
 import { MIN_UNITS_PER_PRODUCT } from "@/lib/validation";
 import { X, ShoppingBag } from "lucide-react";
 
@@ -54,7 +49,7 @@ export default function CartDrawer() {
   // Same evaluation as the cart page, so the drawer cannot show a total
   // the page then disagrees with.
   const bundles = evaluateCart(items);
-  const noticeLines = groupLeadLineIds(items);
+  const groupings = groupCartLines(items);
 
   return (
     <div className="fixed inset-0 z-[60]">
@@ -99,20 +94,16 @@ export default function CartDrawer() {
               </p>
             </div>
           ) : (
-            <div className="space-y-5">
-              {items.map((item) => {
-                const lineId = cartLineId(item);
-                return (
-                  <CartLine
-                    key={lineId}
-                    item={item}
-                    product={catalog?.find((p) => p.id === item.id)}
-                    variant="compact"
-                    group={bundles.byProduct.get(item.id)}
-                    showGroupNotice={noticeLines.has(lineId)}
-                  />
-                );
-              })}
+            <div className="space-y-4">
+              {groupings.map((grouping) => (
+                <CartGroup
+                  key={grouping.id}
+                  grouping={grouping}
+                  group={bundles.byProduct.get(grouping.id)}
+                  product={catalog?.find((p) => p.id === grouping.id)}
+                  variant="compact"
+                />
+              ))}
             </div>
           )}
         </div>

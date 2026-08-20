@@ -1,15 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import {
-  useCartStore,
-  cartLineId,
-  evaluateCart,
-  groupLeadLineIds,
-} from "@/lib/store";
+import { useCartStore, evaluateCart, groupCartLines } from "@/lib/store";
 import { useCatalog } from "@/lib/useCatalog";
 import { useHydrated } from "@/lib/useHydrated";
-import CartLine from "@/components/CartLine";
+import CartGroup from "@/components/CartGroup";
 import {
   BUNDLE_SIZE,
   MIN_UNITS_PER_PRODUCT,
@@ -73,7 +68,9 @@ export default function CartPage() {
     and waiting for a one-time code.
   */
   const bundles = evaluateCart(items);
-  const noticeLines = groupLeadLineIds(items);
+  // One block per product, so the pieces that share a bundle sit together
+  // and the group's standing has a header to live in.
+  const groupings = groupCartLines(items);
   const blockingNames = bundles.shortGroups.map(
     (group) => items.find((i) => i.id === group.id)?.name ?? "",
   );
@@ -267,21 +264,17 @@ export default function CartPage() {
         <div className="grid lg:grid-cols-3 gap-10">
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Same component the drawer renders, so the two views cannot
-                disagree about what a line says or what it lets you do. */}
-            {items.map((item) => {
-              const lineId = cartLineId(item);
-              return (
-                <CartLine
-                  key={lineId}
-                  item={item}
-                  product={catalog?.find((p) => p.id === item.id)}
-                  variant="full"
-                  group={bundles.byProduct.get(item.id)}
-                  showGroupNotice={noticeLines.has(lineId)}
-                />
-              );
-            })}
+            {/* Same components the drawer renders, so the two views cannot
+                disagree about what a group says or what a line lets you do. */}
+            {groupings.map((grouping) => (
+              <CartGroup
+                key={grouping.id}
+                grouping={grouping}
+                group={bundles.byProduct.get(grouping.id)}
+                product={catalog?.find((p) => p.id === grouping.id)}
+                variant="full"
+              />
+            ))}
           </div>
 
           {/* Checkout Panel */}
@@ -346,8 +339,8 @@ export default function CartPage() {
 
               {bundles.ok && bundles.discount === 0 && items.length > 0 && (
                 <p className="text-xs text-muted mb-6 leading-relaxed">
-                  Take any {BUNDLE_SIZE} pieces from the same collection and get 5% off the
-                  bundle. Mix and match colours and sizes!
+                  Take {BUNDLE_SIZE} or more pieces of the same item and get 5%
+                  off that bundle. Mix and match colours and sizes!
                 </p>
               )}
 

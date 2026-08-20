@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import {
   MAX_QUANTITY_PER_LINE,
   evaluateBundles,
+  groupLinesByProduct,
   type BundleEvaluation,
 } from "@/lib/validation";
 
@@ -76,24 +77,52 @@ export function evaluateCart(items: readonly CartItem[]): BundleEvaluation {
   );
 }
 
+/** One product's lines, ready to render as a single block. */
+export interface CartGrouping {
+  /** The product id every line here shares — the bundle group's key. */
+  id: string;
+  /**
+   * A label for the group, taken from the first line.
+   *
+   * The catalogue's name is better when it has loaded — a product can be
+   * renamed after a cart is persisted — so callers that hold a
+   * `PublicProduct` should prefer it and fall back to this.
+   */
+  name: string;
+  /** Every line of this product, in the order the cart holds them. */
+  lines: CartItem[];
+  /** Units across those lines. Matches the bundle group's `quantity`. */
+  quantity: number;
+}
+
 /**
- * The `cartItemId` of the first line of each product group.
+ * The cart's lines, gathered one block per product.
  *
- * A group's notice — "add one more for 5% off", "needs at least 2" —
- * belongs to the product, not to a line, and one product can occupy three
- * lines at three different sizes. Nominating one line per group as the
- * place to render it is what stops the same sentence appearing three
- * times in a row.
+ * The bundle rules count by product id while the cart stores one line per
+ * colour × size, so three pieces of one bag can sit at three separate
+ * places in the list with two other products interleaved. Nothing on
+ * screen then says those three lines are the thing earning the 5%.
+ *
+ * Grouping here rather than in the page means the drawer and the cart page
+ * order lines identically, and it replaces the old `groupLeadLineIds`
+ * trick of nominating one line per product to carry the group's notice —
+ * with a real container, the notice has somewhere to live.
+ *
+ * Groups appear in order of each product's first line, and lines keep
+ * their relative order inside a group, so adding a second size moves
+ * nothing that was already on screen except to pull the new line up beside
+ * its siblings.
  */
-export function groupLeadLineIds(items: readonly CartItem[]): Set<string> {
-  const seenProducts = new Set<string>();
-  const leads = new Set<string>();
-  for (const item of items) {
-    if (seenProducts.has(item.id)) continue;
-    seenProducts.add(item.id);
-    leads.add(cartLineId(item));
-  }
-  return leads;
+export function groupCartLines(items: readonly CartItem[]): CartGrouping[] {
+  // `groupLinesByProduct` sits next to `evaluateBundles` in the same
+  // module, so the blocks on screen and the groups the money is computed
+  // over cannot be keyed differently. All this adds is a display name.
+  return groupLinesByProduct(items).map((group) => ({
+    id: group.id,
+    name: group.lines[0]?.name ?? "",
+    lines: group.lines,
+    quantity: group.quantity,
+  }));
 }
 
 interface CartState {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { cookies } from "next/headers";
 import { ObjectId, type AnyBulkWriteOperation } from "mongodb";
 import { sendNewOrderAdminEmail, sendReceiptEmail } from "@/lib/email";
-import { getOrderNotifyRecipient } from "@/lib/models/admin";
+import { getOrderNotifyRecipients } from "@/lib/models/admin";
 import clientPromise, { getDb } from "@/lib/mongodb";
 import {
   CUSTOMER_SESSION_COOKIE,
@@ -573,21 +573,23 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Notify whichever admin is assigned in the Admins tab.
+      // Notify whichever admins are assigned in the Admins tab.
       //
       // Deliberately a second, separate try/catch rather than another
       // statement in the one above: the shopper's receipt is the more
       // important of the two, and a thrown SMTP error on this send must
       // not be able to prevent it. Sequenced after it for the same reason.
       //
-      // The recipient lookup is one uncached `findOne` per order, which is
-      // fine here — this runs after the response, outside the transaction,
-      // at order rate rather than request rate. See the note on
-      // `getOrderNotifyRecipient` for why caching it would be a
-      // regression rather than an optimisation.
+      // The recipient lookup is one uncached, capped `find` per order,
+      // which is fine here — this runs after the response, outside the
+      // transaction, at order rate rather than request rate. See the note
+      // on `getOrderNotifyRecipients` for why caching it would be a
+      // regression rather than an optimisation. The addresses go out as a
+      // single message, so the number of assignees does not change how
+      // many SMTP round-trips happen on this path.
       try {
-        const recipient = await getOrderNotifyRecipient();
-        if (!recipient) {
+        const recipients = await getOrderNotifyRecipients();
+        if (recipients.length === 0) {
           // Not an error: nobody is assigned. Logged anyway, because
           // "orders are arriving and no human is being told" is a state
           // worth being able to find after the fact.
@@ -600,7 +602,7 @@ export async function POST(req: NextRequest) {
         const appUrl = process.env.APP_URL || "https://rmk-at-sale.vercel.app";
 
         await sendNewOrderAdminEmail(
-          recipient.email,
+          recipients.map((r) => r.email),
           {
             orderNumber: receiptOrderNumber,
             buyerEmail: email,

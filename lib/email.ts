@@ -189,13 +189,25 @@ export async function sendReceiptEmail(
 }
 
 /**
- * Tells the assigned admin that an order has come in.
+ * Tells the assigned admins that an order has come in.
  *
- * Sent to exactly one address — whichever active admin has the
- * `notifyOnNewOrder` flag, resolved by `getOrderNotifyRecipient()`. This is
- * an internal, staff-facing mail: it deliberately carries the buyer's
- * address and the full line detail so the team can act on it straight from
- * their inbox without opening the panel first.
+ * Sent to every active admin holding a notification slot, resolved by
+ * `getOrderNotifyRecipients()` — up to three of them. This is an internal,
+ * staff-facing mail: it deliberately carries the buyer's address and the
+ * full line detail so the team can act on it straight from their inbox
+ * without opening the panel first.
+ *
+ * **One send, not one per recipient.** A loop would mean three SMTP
+ * round-trips inside the checkout route's `after()` block, each able to
+ * fail on its own — three times the latency and three times the ways to
+ * end up with a partially-notified team.
+ *
+ * **Addressing.** Several recipients go in `bcc`, so nobody's address is
+ * exposed in a header that gets forwarded on. A single recipient stays in
+ * `to`, which is worth the asymmetry: a mail with no `To:` header at all
+ * scores worse with spam filters, and one recipient is the overwhelmingly
+ * common case, so it keeps the everyday path exactly as deliverable as it
+ * was before slots existed.
  *
  * Everything interpolated below originates from a shopper's request body —
  * item names come from the catalogue, but colour, size and the buyer's own
@@ -205,12 +217,12 @@ export async function sendReceiptEmail(
  * No campaign banner and no marketing furniture: this is a work
  * notification, and the plainer it is the faster it reads on a phone.
  *
- * @param to - The assigned admin's address.
+ * @param recipients - The assigned admins' addresses. Must not be empty.
  * @param order - The committed order, exactly as recorded.
  * @param adminOrdersUrl - Deep link into the admin orders screen.
  */
 export async function sendNewOrderAdminEmail(
-  to: string,
+  recipients: string[],
   order: {
     orderNumber: string;
     buyerEmail: string;
@@ -228,6 +240,14 @@ export async function sendNewOrderAdminEmail(
   },
   adminOrdersUrl: string,
 ): Promise<void> {
+  if (recipients.length === 0) {
+    // The caller already treats "nobody assigned" as its own case and logs
+    // it. Reaching here with an empty list would otherwise hand nodemailer
+    // a message with no envelope recipients, which fails at the SMTP layer
+    // with a far less useful error than this one.
+    throw new Error("sendNewOrderAdminEmail called with no recipients.");
+  }
+
   const safeOrderNumber = escapeHtml(order.orderNumber);
   const safeBuyerEmail = escapeHtml(order.buyerEmail);
   const totalUnits = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -271,7 +291,9 @@ export async function sendNewOrderAdminEmail(
 
   const mailOptions = {
     from: `"rmk-at-sale" <${process.env.SMTP_USER}>`,
-    to,
+    // See the addressing note above: one recipient is addressed normally,
+    // several are blind-copied.
+    ...(recipients.length === 1 ? { to: recipients[0] } : { bcc: recipients }),
     subject: `New order ${order.orderNumber} — ₱${order.total.toFixed(2)}`,
     // The buyer's address is set as Reply-To rather than From, so hitting
     // reply in a mail client goes straight to the customer. `from` stays

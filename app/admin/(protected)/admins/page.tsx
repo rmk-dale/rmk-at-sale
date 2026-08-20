@@ -10,7 +10,7 @@ interface AdminAccount {
   role: "owner" | "staff";
   status: "invited" | "active" | "disabled";
   twoFactorEnabled: boolean;
-  /** Exactly one admin at a time is emailed when an order comes in. */
+  /** Up to ORDER_NOTIFY_MAX admins are emailed when an order comes in. */
   notifyOnNewOrder: boolean;
   createdAt: string;
 }
@@ -20,6 +20,17 @@ const STATUS_STYLES: Record<AdminAccount["status"], string> = {
   invited: "bg-amber-50 text-amber-600",
   disabled: "bg-zinc-100 text-zinc-500",
 };
+
+/**
+ * Mirrors `ORDER_NOTIFY_MAX` in lib/models/admin.ts.
+ *
+ * Copied rather than imported: that module pulls in the MongoDB driver at
+ * the top level, and a value import from a client component drags the
+ * driver into the browser bundle. The server stays the authority — this
+ * copy only decides when the table stops offering more switches, and a
+ * PATCH past the cap is refused there whatever this number says.
+ */
+const ORDER_NOTIFY_MAX = 3;
 
 export default function AdminsPage() {
   const [admins, setAdmins] = useState<AdminAccount[]>([]);
@@ -105,15 +116,16 @@ export default function AdminsPage() {
   };
 
   /**
-   * Assigns — or clears — the single admin who is emailed on every new
-   * order.
+   * Adds — or removes — one admin from the set emailed on every new order.
    *
-   * Updated optimistically and *exclusively*: the server sets the flag here
-   * and clears it on every other admin in the same transaction, so the
-   * table has to move both rows at once or it would briefly show two
-   * admins switched on. The optimistic state mirrors the server's rule
-   * exactly, which is why there's no reload afterwards — a reload would
-   * blank the table behind a "Loading…" line for a one-click toggle.
+   * Each switch stands on its own now, so only the row that was clicked
+   * moves. Updated optimistically and without a reload afterwards: a
+   * reload would blank the whole table behind a "Loading…" line for a
+   * one-click toggle. On any failure the previous table is put back, which
+   * matters more than it used to — the server can legitimately refuse a
+   * claim (all slots taken, admin not active), and a switch left sitting
+   * in the "on" position after a refusal would misreport who is being
+   * emailed.
    */
   const setOrderNotifications = async (id: string, next: boolean) => {
     setActionError("");
@@ -122,7 +134,7 @@ export default function AdminsPage() {
 
     const previous = admins;
     setAdmins((current) =>
-      current.map((a) => ({ ...a, notifyOnNewOrder: next && a.id === id })),
+      current.map((a) => (a.id === id ? { ...a, notifyOnNewOrder: next } : a)),
     );
 
     try {
@@ -175,9 +187,10 @@ export default function AdminsPage() {
     );
   }
 
-  // At most one, by construction — the server clears the flag everywhere
-  // else whenever it is claimed.
-  const notifyRecipient = admins.find((a) => a.notifyOnNewOrder) ?? null;
+  // At most ORDER_NOTIFY_MAX, by construction — the server refuses a claim
+  // once the slots are full.
+  const notifyRecipients = admins.filter((a) => a.notifyOnNewOrder);
+  const slotsFull = notifyRecipients.length >= ORDER_NOTIFY_MAX;
 
   return (
     <div className="max-w-4xl">
@@ -238,25 +251,38 @@ export default function AdminsPage() {
       {/* Nobody assigned is a real, silent failure mode: orders keep coming
           in and no one is told. Said plainly rather than left to be
           inferred from a row of empty switches. */}
-      {!loading && admins.length > 0 && !notifyRecipient && (
+      {!loading && admins.length > 0 && notifyRecipients.length === 0 && (
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-4 py-3 mb-4 text-sm">
           <BellOff className="w-4 h-4 mt-0.5 shrink-0" />
           <p>
             No admin is receiving order notifications. Switch{" "}
-            <span className="font-medium">Order emails</span> on for one
-            active admin below and every new order will be sent to their
-            address.
+            <span className="font-medium">Order emails</span> on for up to{" "}
+            {ORDER_NOTIFY_MAX} active admins below and every new order will
+            be sent to their addresses.
           </p>
         </div>
       )}
 
-      {!loading && notifyRecipient && (
+      {/* The addresses are listed rather than counted: "3 of 3 slots used"
+          answers a question nobody has, and the thing an owner actually
+          needs to check at a glance is whether their own address is on the
+          list. The count is there for the second question — whether there
+          is room to add someone. */}
+      {!loading && notifyRecipients.length > 0 && (
         <p className="text-zinc-500 text-sm mb-4">
           New orders are emailed to{" "}
-          <span className="font-medium text-zinc-900">
-            {notifyRecipient.email}
+          {notifyRecipients.map((a, i) => (
+            <span key={a.id}>
+              {i > 0 && (i === notifyRecipients.length - 1 ? " and " : ", ")}
+              <span className="font-medium text-zinc-900">{a.email}</span>
+            </span>
+          ))}
+          .{" "}
+          <span className="text-zinc-400">
+            {slotsFull
+              ? `All ${ORDER_NOTIFY_MAX} slots are in use — switch one off to add someone else.`
+              : `${ORDER_NOTIFY_MAX - notifyRecipients.length} of ${ORDER_NOTIFY_MAX} slots free.`}
           </span>
-          .
         </p>
       )}
 
@@ -273,7 +299,10 @@ export default function AdminsPage() {
                 <th className="px-5 py-3 font-medium">Status</th>
                 <th className="px-5 py-3 font-medium">2FA</th>
                 <th className="px-5 py-3 font-medium whitespace-nowrap">
-                  Order emails
+                  Order emails{" "}
+                  <span className="font-normal text-zinc-400">
+                    (max {ORDER_NOTIFY_MAX})
+                  </span>
                 </th>
                 <th className="px-5 py-3 font-medium"></th>
               </tr>
@@ -306,21 +335,33 @@ export default function AdminsPage() {
                     {a.twoFactorEnabled ? "Enabled" : "—"}
                   </td>
                   <td className="px-5 py-3">
-                    {/* Radio-like, not a set of independent checkboxes:
-                        switching one on switches the others off, because
-                        exactly one address receives order mail. */}
+                    {/* Independent checkboxes, not a radio group: several
+                        admins can be switched on at once, up to
+                        ORDER_NOTIFY_MAX. Once the slots are full the
+                        remaining switches go disabled rather than failing
+                        on click — the server would refuse the PATCH
+                        anyway, and a switch that visibly can't move
+                        explains the cap better than an error message
+                        after the fact. Rows already on stay clickable, so
+                        there is always a way to free a slot. */}
                     <button
                       type="button"
                       role="switch"
                       aria-checked={a.notifyOnNewOrder}
                       aria-label={`Email new orders to ${a.username}`}
-                      disabled={a.status !== "active" || notifying !== null}
+                      disabled={
+                        a.status !== "active" ||
+                        notifying !== null ||
+                        (!a.notifyOnNewOrder && slotsFull)
+                      }
                       title={
                         a.status !== "active"
                           ? "Only an active admin can receive order notifications."
                           : a.notifyOnNewOrder
-                            ? "Turn off — no one will be emailed about new orders."
-                            : `Email every new order to ${a.email}`
+                            ? `Turn off — ${a.email} will stop being emailed about new orders.`
+                            : slotsFull
+                              ? `Order notifications are limited to ${ORDER_NOTIFY_MAX} admins. Switch one off first.`
+                              : `Email every new order to ${a.email}`
                       }
                       onClick={() =>
                         setOrderNotifications(a.id, !a.notifyOnNewOrder)

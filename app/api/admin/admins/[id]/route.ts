@@ -5,11 +5,23 @@ import { requireOwner } from "@/lib/adminGuard";
 import {
   getAdminsCollection,
   toPublicAdmin,
+  ORDER_NOTIFY_MAX,
   type AdminRole,
   type AdminStatus,
 } from "@/lib/models/admin";
 import { diffFields, recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
+
+/**
+ * Thrown inside the claim transaction when every notification slot is
+ * already taken, purely so the abort carries a reason the catch below can
+ * turn into a 400 rather than a 500.
+ *
+ * A plain sentinel class, not a transient Mongo error: `withTransaction`
+ * retries on the latter, and retrying a full set forever is not what we
+ * want. This one aborts the transaction and propagates on the first throw.
+ */
+class OrderNotifyLimitError extends Error {}
 
 export async function PATCH(
   req: NextRequest,
@@ -102,12 +114,12 @@ export async function PATCH(
       }
     }
 
-    // Order notifications go to exactly one active admin.
+    // Order notifications go to up to ORDER_NOTIFY_MAX active admins.
     //
     // `effectiveStatus` is what the account will be once this request
     // lands, not what it is now, so a single PATCH that both disables an
-    // admin and claims the flag for them is refused rather than silently
-    // producing an assignment that `getOrderNotifyRecipient` will never
+    // admin and claims a slot for them is refused rather than silently
+    // producing an assignment that `getOrderNotifyRecipients` will never
     // match.
     const effectiveStatus = status ?? target.status;
 
@@ -121,25 +133,28 @@ export async function PATCH(
       );
     }
 
-    // Losing active status releases the flag. Leaving it set would keep
+    // Losing active status releases the slot. Leaving it set would keep
     // order mail flowing to an account whose access was just revoked, and
     // — worse — would leave the store looking configured while
-    // `getOrderNotifyRecipient` matched nobody.
+    // `getOrderNotifyRecipients` skipped that account.
     let notifyChange = notifyOnNewOrder;
     if (effectiveStatus !== "active" && target.notifyOnNewOrder) {
       notifyChange = false;
     }
 
-    // Read before the write, purely so the audit entry can name the admin
-    // who is losing the flag. Skipped entirely when notifications aren't
-    // part of this request.
-    const previousHolder =
-      notifyChange !== undefined
-        ? await admins.findOne(
-            { notifyOnNewOrder: true },
-            { projection: { username: 1 } },
-          )
-        : null;
+    /** Usernames currently holding a notification slot, alphabetical. */
+    const readHolders = async () => {
+      const holders = await admins
+        .find({ notifyOnNewOrder: true }, { projection: { username: 1 } })
+        .sort({ username: 1 })
+        .toArray();
+      return holders.map((h) => h.username);
+    };
+
+    // Read before the write, purely so the audit entry can show the list
+    // as it stood. Skipped entirely when notifications aren't part of this
+    // request.
+    const holdersBefore = notifyChange !== undefined ? await readHolders() : [];
 
     const update: Record<string, unknown> = { updatedAt: new Date() };
     if (role) update.role = role;
@@ -162,25 +177,33 @@ export async function PATCH(
       : { $set: update };
 
     if (notifyChange === true) {
-      // Claiming the flag has to set it here and clear it everywhere else
-      // as one indivisible step, or two owners assigning different admins
-      // at the same moment leave two accounts receiving order mail.
+      // Claiming a slot is a check against the *other* documents followed
+      // by a write to this one, so counting and claiming have to be one
+      // indivisible step. Without that, two owners switching two different
+      // admins on at the same moment both read "2 holders, room for one
+      // more" and both commit, leaving four addresses on every order mail.
       //
       // Two details in here are load-bearing:
       //
-      // 1. The clearing write is NOT filtered on `notifyOnNewOrder: true`,
-      //    which is the obvious way to write it and is wrong. Mongo
-      //    detects a write conflict only on documents a transaction
-      //    actually writes. With that filter, a transaction whose snapshot
-      //    predates the other's commit matches nothing, writes nothing,
-      //    conflicts with nothing — and both claims commit. Writing every
-      //    other admin unconditionally guarantees the two overlap, so the
-      //    loser aborts, retries against the committed state, and the
-      //    result is exactly one holder. It also quietly repairs any drift
-      //    left behind by a direct database edit.
+      // 1. The count runs INSIDE the transaction, against its snapshot,
+      //    and excludes the target — so re-affirming a slot the admin
+      //    already holds can never be rejected for being one over.
       //
-      // 2. The target is written before the others are cleared, so there
-      //    is no instant at which the flag is set on nobody.
+      // 2. The `updatedAt` bump on every other admin exists purely to
+      //    force a write conflict, and it is the whole reason the count
+      //    can be trusted. Mongo detects conflicts only on documents a
+      //    transaction actually writes, and this transaction otherwise
+      //    writes just its own target — two claims on two different
+      //    targets would overlap on nothing, conflict on nothing, and both
+      //    commit past the cap. Touching all the others makes any two
+      //    concurrent claims collide, so the loser aborts, `withTransaction`
+      //    retries it against committed state, and its count sees the
+      //    winner. It has to be a value that genuinely changes: an update
+      //    that leaves a document byte-identical (writing `false` over
+      //    `false`, say) can be skipped as a no-op and is not guaranteed
+      //    to conflict at all. `updatedAt` is internal bookkeeping — it is
+      //    not in `toPublicAdmin` and nothing sorts or filters on it — so
+      //    moving it on a sibling row costs nothing.
       //
       // The admins collection is a handful of documents and this runs a
       // few times a year, so the cost of writing all of them is nil. None
@@ -189,21 +212,40 @@ export async function PATCH(
       const mongoSession = client.startSession();
       try {
         await mongoSession.withTransaction(async () => {
+          const otherHolders = await admins.countDocuments(
+            { _id: { $ne: target._id }, notifyOnNewOrder: true },
+            { session: mongoSession },
+          );
+          if (otherHolders >= ORDER_NOTIFY_MAX) {
+            throw new OrderNotifyLimitError();
+          }
+
           await admins.updateOne({ _id: target._id }, targetWrite, {
             session: mongoSession,
           });
           await admins.updateMany(
             { _id: { $ne: target._id } },
-            { $set: { notifyOnNewOrder: false } },
+            { $set: { updatedAt: new Date() } },
             { session: mongoSession },
           );
         });
+      } catch (err) {
+        if (err instanceof OrderNotifyLimitError) {
+          return NextResponse.json(
+            {
+              error: `Order notifications are limited to ${ORDER_NOTIFY_MAX} admins. Switch one off before adding another.`,
+            },
+            { status: 400 },
+          );
+        }
+        throw err;
       } finally {
         await mongoSession.endSession();
       }
     } else {
-      // Clearing the flag, or not touching it at all, affects this one
-      // document and needs no transaction.
+      // Clearing a slot, or not touching notifications at all, affects
+      // this one document and needs no transaction. Releasing is never
+      // rejected — the cap only ever constrains the way up.
       await admins.updateOne({ _id: target._id }, targetWrite);
     }
 
@@ -227,14 +269,16 @@ export async function PATCH(
       });
     }
 
-    // Recorded as a handover rather than a flag flip, so the log answers
-    // "why did X stop getting order emails" and not just "Y started".
-    // `previousHolder` may be the target itself when someone toggles their
-    // own row off, in which case from and to are the same name and null.
+    // Recorded as the whole recipient list before and after, not as a
+    // single flag flip. With several slots, "owner switched Bob on" does
+    // not answer the question people actually bring to this log — who was
+    // being emailed at the time — and the list does, in one line, without
+    // replaying every earlier entry.
     if (
       notifyChange !== undefined &&
       notifyChange !== (target.notifyOnNewOrder === true)
     ) {
+      const holdersAfter = await readHolders();
       await recordAudit({
         admin: owner,
         action: "admin.order_notify_change",
@@ -243,9 +287,9 @@ export async function PATCH(
         targetLabel: target.username,
         changes: [
           {
-            field: "orderNotificationRecipient",
-            from: previousHolder?.username ?? null,
-            to: notifyChange ? target.username : null,
+            field: "orderNotificationRecipients",
+            from: holdersBefore.join(", ") || null,
+            to: holdersAfter.join(", ") || null,
           },
         ],
         ip: getClientIp(req),

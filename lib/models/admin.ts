@@ -4,6 +4,18 @@ import { getDb } from "@/lib/mongodb";
 export type AdminRole = "owner" | "staff";
 export type AdminStatus = "invited" | "active" | "disabled";
 
+/**
+ * How many admins may be assigned order notifications at once.
+ *
+ * A cap rather than "everyone who wants it" on purpose: every recipient is
+ * one more address on a mail that goes out on every single order, and a
+ * fixed small number keeps the Admins tab honest about who is actually
+ * watching the inbox. Three is the number the shop asked for; raising it
+ * is a one-line change here, but read the transaction in the PATCH route
+ * first — the cap is what makes that write worth serialising.
+ */
+export const ORDER_NOTIFY_MAX = 3;
+
 export interface AdminDoc {
   _id: ObjectId;
   username: string;
@@ -35,10 +47,11 @@ export interface AdminDoc {
    */
   sessionEpoch?: number;
   /**
-   * Set on exactly one admin at a time: the person who receives an email
-   * every time an order is placed. Exclusivity is enforced by the PATCH
-   * route, which sets it here and clears it everywhere else inside one
-   * transaction — see app/api/admin/admins/[id]/route.ts.
+   * Set on up to `ORDER_NOTIFY_MAX` admins at a time: the people emailed
+   * whenever an order is placed. The toggles are independent — switching
+   * one on no longer switches the others off — and the cap is enforced by
+   * the PATCH route, which counts the current holders and claims a slot
+   * inside one transaction. See app/api/admin/admins/[id]/route.ts.
    *
    * Absent on every account created before this field existed, which is
    * why the lookup below matches `true` explicitly.
@@ -84,32 +97,41 @@ export function toPublicAdmin(doc: AdminDoc) {
 }
 
 /**
- * The admin who should be emailed when an order is placed, or null if
- * nobody is assigned.
+ * The admins who should be emailed when an order is placed — up to
+ * `ORDER_NOTIFY_MAX` of them, empty if nobody is assigned.
  *
  * Deliberately NOT cached. This runs once per order, in the `after()` block
  * of the checkout route — after the transaction has committed and after the
- * response has been sent. One `findOne` at order rate is far below anything
- * the M0 ops budget cares about, and a TTL cache would only buy staleness:
- * a per-container cache is invisible to the container that handled the
- * toggle, so an owner reassigning notifications would watch mail keep
- * arriving at the old address for the length of the TTL.
+ * response has been sent. One capped `find` at order rate is far below
+ * anything the M0 ops budget cares about, and a TTL cache would only buy
+ * staleness: a per-container cache is invisible to the container that
+ * handled the toggle, so an owner reassigning notifications would watch
+ * mail keep arriving at the old address for the length of the TTL.
  *
  * `status: "active"` is part of the filter as a second line of defence.
  * Disabling an admin already clears this flag (see the PATCH route), so a
  * disabled account should never match — but if a flag is ever left behind
  * by a direct database edit, a revoked account still does not receive
  * order mail.
+ *
+ * `.limit(ORDER_NOTIFY_MAX)` is the same kind of defence for the cap. The
+ * PATCH route is the only thing that should ever be able to exceed it, and
+ * it can't — but if drift ever puts a fourth flag in the collection, the
+ * blast radius is a missing recipient rather than an unbounded internal
+ * mailing list. Sorted by username so that truncation, if it ever happens,
+ * is at least stable and explainable rather than dependent on scan order.
  */
-export async function getOrderNotifyRecipient(): Promise<{
-  email: string;
-  username: string;
-} | null> {
+export async function getOrderNotifyRecipients(): Promise<
+  Array<{ email: string; username: string }>
+> {
   const admins = await getAdminsCollection();
-  const recipient = await admins.findOne(
-    { notifyOnNewOrder: true, status: "active" },
-    { projection: { email: 1, username: 1 } },
-  );
-  if (!recipient) return null;
-  return { email: recipient.email, username: recipient.username };
+  const recipients = await admins
+    .find(
+      { notifyOnNewOrder: true, status: "active" },
+      { projection: { email: 1, username: 1 } },
+    )
+    .sort({ username: 1 })
+    .limit(ORDER_NOTIFY_MAX)
+    .toArray();
+  return recipients.map((r) => ({ email: r.email, username: r.username }));
 }

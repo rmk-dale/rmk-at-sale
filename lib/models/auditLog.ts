@@ -34,12 +34,11 @@ export type AuditAction =
   | "admin.update"
   | "admin.sessions_revoked"
   /**
-   * Reassignment of the single "email me every new order" flag. Kept
-   * separate from `admin.update` because it is the one admin change whose
-   * effect lands on a *different* account — turning it on for one person
-   * turns it off for whoever held it — and an entry that named only the
-   * winner would leave no record of why the previous holder stopped
-   * receiving order mail. Both usernames are in the entry's `changes`.
+   * A change to the set of admins emailed on every new order. Kept
+   * separate from `admin.update` because the interesting fact is not which
+   * switch moved but who the store was mailing before and after, and that
+   * is a property of the whole collection rather than of the one account
+   * named as the target. The entry's `changes` carries both lists.
    */
   | "admin.order_notify_change"
   | "order.status_change";

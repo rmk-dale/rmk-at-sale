@@ -203,18 +203,41 @@ export default function CartPage() {
               <X className="w-5 h-5 text-muted" />
             </button>
             <h2 className="text-xl font-semibold mb-4 text-foreground">
-              {modalContent === "TERMS" ? "Terms and Conditions" : "Data Privacy Policy"}
+              {modalContent === "TERMS" ? "Terms & Conditions" : "Data Privacy Policy"}
             </h2>
             <div className="space-y-4 text-sm text-foreground/90 leading-relaxed">
               {modalContent === "TERMS" ? (
                 <>
-                  <p>Welcome to RMK American Tourister Sale.</p>
+                  <p>Welcome to the RMK American Tourister Sale!</p>
                   <p>
-                    Please note that submitting this form does not constitute a final purchase. 
-                    <strong> This is only an ordering process. Someone from our team will confirm the sale </strong> 
-                    and contact you for payment and delivery details.
+                    Please note that submitting this form{" "}
+                    <strong>does not confirm your purchase</strong>. This form
+                    is for order placement only.
                   </p>
-                  <p>By proceeding, you agree to these terms.</p>
+                  <ul className="list-disc pl-5 space-y-2">
+                    <li>
+                      Our team will check the availability of the items in your
+                      order and send you an order confirmation once all items
+                      are confirmed to be available.
+                    </li>
+                    <li>
+                      In an instance wherein an item is unavailable or the
+                      stocks are insufficient, our representative will contact
+                      you with alternative options for the bundle.
+                    </li>
+                    <li>
+                      Once your order is confirmed, a representative will
+                      contact you regarding payment and pick-up details.
+                    </li>
+                    <li>
+                      Pick-up location: RMK Head Office, 3/F Midland Buendia
+                      Bldg., Sen. Gil J. Puyat Ave., Makati City.
+                    </li>
+                  </ul>
+                  <p>
+                    By submitting this form, you confirm that you have read and
+                    agreed to the terms and conditions above.
+                  </p>
                 </>
               ) : (
                 <>
@@ -411,7 +434,7 @@ export default function CartPage() {
                           type="button"
                           className="text-foreground underline hover:text-primary transition-colors font-medium"
                         >
-                          Terms and Conditions
+                          Terms &amp; Conditions
                         </button>.
                       </span>
                     </label>

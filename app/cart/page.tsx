@@ -160,25 +160,27 @@ export default function CartPage() {
             <span className="text-foreground font-medium">{email}</span>. Thank
             you for your purchase.
           </p>
-          {orderNumber && (
-            <div className="mb-8 inline-block px-5 py-3 rounded-xl bg-background border border-border">
-              <p className="text-xs uppercase tracking-wide text-muted mb-1">
-                Order reference
-              </p>
-              <p className="font-mono text-lg font-semibold text-foreground">
-                {orderNumber}
-              </p>
-              <p className="text-xs text-muted mt-1">
-                Quote this if you contact us about your order.
-              </p>
-            </div>
-          )}
-          <Link
-            href="/"
-            className="inline-flex bg-primary text-white px-8 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
-          >
-            Continue shopping
-          </Link>
+          <div className="flex flex-col items-center gap-8">
+            {orderNumber && (
+              <div className="px-5 py-3 rounded-xl bg-background border border-border">
+                <p className="text-xs uppercase tracking-wide text-muted mb-1">
+                  Order reference
+                </p>
+                <p className="font-mono text-lg font-semibold text-foreground">
+                  {orderNumber}
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  Quote this if you contact us about your order.
+                </p>
+              </div>
+            )}
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center bg-primary text-white px-8 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
+            >
+              Continue shopping
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -201,27 +203,70 @@ export default function CartPage() {
               <X className="w-5 h-5 text-muted" />
             </button>
             <h2 className="text-xl font-semibold mb-4 text-foreground">
-              {modalContent === "TERMS" ? "Terms and Conditions" : "Data Privacy Policy"}
+              {modalContent === "TERMS" ? "Terms & Conditions" : "Data Privacy Policy"}
             </h2>
             <div className="space-y-4 text-sm text-foreground/90 leading-relaxed">
               {modalContent === "TERMS" ? (
                 <>
-                  <p>Welcome to RMK American Tourister Sale.</p>
+                  <p>Welcome to the RMK American Tourister Sale!</p>
                   <p>
-                    Please note that submitting this form does not constitute a final purchase. 
-                    <strong> This is only an ordering process. Someone from our team will confirm the sale </strong> 
-                    and contact you for payment and delivery details.
+                    Please note that submitting this form{" "}
+                    <strong>does not confirm your purchase</strong>. This form
+                    is for order placement only.
                   </p>
-                  <p>By proceeding, you agree to these terms.</p>
+                  <ul className="list-disc pl-5 space-y-2">
+                    <li>
+                      Our team will check the availability of the items in your
+                      order and send you an order confirmation once all items
+                      are confirmed to be available.
+                    </li>
+                    <li>
+                      In an instance wherein an item is unavailable or the
+                      stocks are insufficient, our representative will contact
+                      you with alternative options for the bundle.
+                    </li>
+                    <li>
+                      Once your order is confirmed, a representative will
+                      contact you regarding payment and pick-up details.
+                    </li>
+                    <li>
+                      Payment Method: Online payment only via GCash or Bank
+                      Transfer.
+                    </li>
+                    <li>
+                      Pick-up location: RMK Head Office, 3/F Midland Buendia
+                      Bldg., Sen. Gil J. Puyat Ave., Makati City.
+                    </li>
+                  </ul>
+                  <p>
+                    By submitting this form, you confirm that you have read and
+                    agreed to the terms and conditions above.
+                  </p>
                 </>
               ) : (
                 <>
+                  <ul className="list-disc pl-5 space-y-2">
+                    <li>
+                      We only collect your RGOC email address to process and
+                      track your order.
+                    </li>
+                    <li>
+                      A member of our team may contact you using the email
+                      address provided to finalize your order and arrange
+                      payment and pick-up details.
+                    </li>
+                    <li>
+                      We will never ask for your password, OTP, credit card
+                      details, or other sensitive account information.
+                    </li>
+                    <li>
+                      Your information will be kept strictly confidential and
+                      will not be shared with or disclosed to third parties.
+                    </li>
+                  </ul>
                   <p>
-                    <strong>We only collect your email address for tracking orders.</strong>
-                  </p>
-                  <p>
-                    Someone from our team will contact you to finalize and confirm the sale. 
-                    Your data will be kept strictly confidential and will not be shared with any third parties.
+                    By submitting this form, you confirm that you have read and
+                    agreed to the Data Privacy Policy above.
                   </p>
                 </>
               )}
@@ -409,7 +454,7 @@ export default function CartPage() {
                           type="button"
                           className="text-foreground underline hover:text-primary transition-colors font-medium"
                         >
-                          Terms and Conditions
+                          Terms &amp; Conditions
                         </button>.
                       </span>
                     </label>

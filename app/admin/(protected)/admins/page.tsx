@@ -290,129 +290,140 @@ export default function AdminsPage() {
         <p className="text-zinc-500 text-sm">Loading admins…</p>
       ) : (
         <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-zinc-500">
-                <th className="px-5 py-3 font-medium">Username</th>
-                <th className="px-5 py-3 font-medium">Email</th>
-                <th className="px-5 py-3 font-medium">Role</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">2FA</th>
-                <th className="px-5 py-3 font-medium whitespace-nowrap">
-                  Order emails{" "}
-                  <span className="font-normal text-zinc-400">
-                    (max {ORDER_NOTIFY_MAX})
-                  </span>
-                </th>
-                <th className="px-5 py-3 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {admins.map((a) => (
-                <tr key={a.id} className="border-b border-border last:border-0">
-                  <td className="px-5 py-3 text-zinc-900">{a.username}</td>
-                  <td className="px-5 py-3 text-zinc-600">{a.email}</td>
-                  <td className="px-5 py-3">
-                    <select
-                      value={a.role}
-                      onChange={(e) =>
-                        updateAdmin(a.id, { role: e.target.value })
-                      }
-                      className="bg-transparent text-zinc-900 text-sm focus:outline-none"
-                    >
-                      <option value="staff">Staff</option>
-                      <option value="owner">Owner</option>
-                    </select>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
-                    >
-                      {a.status}
+          {/* The action column ("Resend", "Re-enable") is the widest thing in
+              the row and used to be clipped by the wrapper's overflow-hidden,
+              which rounds the corners but gives no way to reach the cut-off
+              content. The inner layer scrolls instead, and min-w keeps the
+              columns from crushing into each other before it does. */}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[880px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-zinc-500">
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">Username</th>
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">Email</th>
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">Role</th>
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">Status</th>
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">2FA</th>
+                  <th className="px-4 py-3 font-medium whitespace-nowrap">
+                    Order emails{" "}
+                    <span className="font-normal text-zinc-400">
+                      (max {ORDER_NOTIFY_MAX})
                     </span>
-                  </td>
-                  <td className="px-5 py-3 text-zinc-600">
-                    {a.twoFactorEnabled ? "Enabled" : "—"}
-                  </td>
-                  <td className="px-5 py-3">
-                    {/* Independent checkboxes, not a radio group: several
-                        admins can be switched on at once, up to
-                        ORDER_NOTIFY_MAX. Once the slots are full the
-                        remaining switches go disabled rather than failing
-                        on click — the server would refuse the PATCH
-                        anyway, and a switch that visibly can't move
-                        explains the cap better than an error message
-                        after the fact. Rows already on stay clickable, so
-                        there is always a way to free a slot. */}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={a.notifyOnNewOrder}
-                      aria-label={`Email new orders to ${a.username}`}
-                      disabled={
-                        a.status !== "active" ||
-                        notifying !== null ||
-                        (!a.notifyOnNewOrder && slotsFull)
-                      }
-                      title={
-                        a.status !== "active"
-                          ? "Only an active admin can receive order notifications."
-                          : a.notifyOnNewOrder
-                            ? `Turn off — ${a.email} will stop being emailed about new orders.`
-                            : slotsFull
-                              ? `Order notifications are limited to ${ORDER_NOTIFY_MAX} admins. Switch one off first.`
-                              : `Email every new order to ${a.email}`
-                      }
-                      onClick={() =>
-                        setOrderNotifications(a.id, !a.notifyOnNewOrder)
-                      }
-                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed ${
-                        a.notifyOnNewOrder ? "bg-emerald-500" : "bg-zinc-200"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                          a.notifyOnNewOrder
-                            ? "translate-x-[18px]"
-                            : "translate-x-[3px]"
-                        }`}
-                      />
-                    </button>
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <div className="flex gap-4 justify-end items-center">
-                      {a.status === "invited" && (
-                        <button
-                          onClick={() => resendInvite(a.id, a.email)}
-                          disabled={resending === a.id}
-                          className="text-amber-600 hover:text-amber-700 text-sm font-medium disabled:opacity-50"
-                        >
-                          {resending === a.id ? "Sending…" : "Resend"}
-                        </button>
-                      )}
-                      {a.status === "disabled" ? (
-                        <button
-                          onClick={() => updateAdmin(a.id, { status: "active" })}
-                          className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
-                        >
-                          Re-enable
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() =>
-                            updateAdmin(a.id, { status: "disabled" })
-                          }
-                          className="text-red-500 hover:text-red-600 text-sm font-medium"
-                        >
-                          Disable
-                        </button>
-                      )}
-                    </div>
-                  </td>
+                  </th>
+                  <th className="px-4 py-3 font-medium w-px"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {admins.map((a) => (
+                  <tr key={a.id} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3 text-zinc-900 whitespace-nowrap">
+                      {a.username}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">
+                      {a.email}
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={a.role}
+                        onChange={(e) =>
+                          updateAdmin(a.id, { role: e.target.value })
+                        }
+                        className="bg-transparent text-zinc-900 text-sm focus:outline-none"
+                      >
+                        <option value="staff">Staff</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[a.status]}`}
+                      >
+                        {a.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-600 whitespace-nowrap">
+                      {a.twoFactorEnabled ? "Enabled" : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {/* Independent checkboxes, not a radio group: several
+                          admins can be switched on at once, up to
+                          ORDER_NOTIFY_MAX. Once the slots are full the
+                          remaining switches go disabled rather than failing
+                          on click — the server would refuse the PATCH
+                          anyway, and a switch that visibly can't move
+                          explains the cap better than an error message
+                          after the fact. Rows already on stay clickable, so
+                          there is always a way to free a slot. */}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={a.notifyOnNewOrder}
+                        aria-label={`Email new orders to ${a.username}`}
+                        disabled={
+                          a.status !== "active" ||
+                          notifying !== null ||
+                          (!a.notifyOnNewOrder && slotsFull)
+                        }
+                        title={
+                          a.status !== "active"
+                            ? "Only an active admin can receive order notifications."
+                            : a.notifyOnNewOrder
+                              ? `Turn off — ${a.email} will stop being emailed about new orders.`
+                              : slotsFull
+                                ? `Order notifications are limited to ${ORDER_NOTIFY_MAX} admins. Switch one off first.`
+                                : `Email every new order to ${a.email}`
+                        }
+                        onClick={() =>
+                          setOrderNotifications(a.id, !a.notifyOnNewOrder)
+                        }
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed ${
+                          a.notifyOnNewOrder ? "bg-emerald-500" : "bg-zinc-200"
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                            a.notifyOnNewOrder
+                              ? "translate-x-[18px]"
+                              : "translate-x-[3px]"
+                          }`}
+                        />
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <div className="flex gap-3 justify-end items-center">
+                        {a.status === "invited" && (
+                          <button
+                            onClick={() => resendInvite(a.id, a.email)}
+                            disabled={resending === a.id}
+                            className="text-amber-600 hover:text-amber-700 text-sm font-medium disabled:opacity-50"
+                          >
+                            {resending === a.id ? "Sending…" : "Resend"}
+                          </button>
+                        )}
+                        {a.status === "disabled" ? (
+                          <button
+                            onClick={() => updateAdmin(a.id, { status: "active" })}
+                            className="text-emerald-600 hover:text-emerald-700 text-sm font-medium"
+                          >
+                            Re-enable
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              updateAdmin(a.id, { status: "disabled" })
+                            }
+                            className="text-red-500 hover:text-red-600 text-sm font-medium"
+                          >
+                            Disable
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

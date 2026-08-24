@@ -230,6 +230,10 @@ export default function CartPage() {
                       contact you regarding payment and pick-up details.
                     </li>
                     <li>
+                      Payment Method: Online payment only via GCash or Bank
+                      Transfer.
+                    </li>
+                    <li>
                       Pick-up location: RMK Head Office, 3/F Midland Buendia
                       Bldg., Sen. Gil J. Puyat Ave., Makati City.
                     </li>
@@ -241,12 +245,28 @@ export default function CartPage() {
                 </>
               ) : (
                 <>
+                  <ul className="list-disc pl-5 space-y-2">
+                    <li>
+                      We only collect your RGOC email address to process and
+                      track your order.
+                    </li>
+                    <li>
+                      A member of our team may contact you using the email
+                      address provided to finalize your order and arrange
+                      payment and pick-up details.
+                    </li>
+                    <li>
+                      We will never ask for your password, OTP, credit card
+                      details, or other sensitive account information.
+                    </li>
+                    <li>
+                      Your information will be kept strictly confidential and
+                      will not be shared with or disclosed to third parties.
+                    </li>
+                  </ul>
                   <p>
-                    <strong>We only collect your email address for tracking orders.</strong>
-                  </p>
-                  <p>
-                    Someone from our team will contact you to finalize and confirm the sale. 
-                    Your data will be kept strictly confidential and will not be shared with any third parties.
+                    By submitting this form, you confirm that you have read and
+                    agreed to the Data Privacy Policy above.
                   </p>
                 </>
               )}

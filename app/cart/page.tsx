@@ -160,25 +160,27 @@ export default function CartPage() {
             <span className="text-foreground font-medium">{email}</span>. Thank
             you for your purchase.
           </p>
-          {orderNumber && (
-            <div className="mb-8 inline-block px-5 py-3 rounded-xl bg-background border border-border">
-              <p className="text-xs uppercase tracking-wide text-muted mb-1">
-                Order reference
-              </p>
-              <p className="font-mono text-lg font-semibold text-foreground">
-                {orderNumber}
-              </p>
-              <p className="text-xs text-muted mt-1">
-                Quote this if you contact us about your order.
-              </p>
-            </div>
-          )}
-          <Link
-            href="/"
-            className="inline-flex bg-primary text-white px-8 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
-          >
-            Continue shopping
-          </Link>
+          <div className="flex flex-col items-center gap-8">
+            {orderNumber && (
+              <div className="px-5 py-3 rounded-xl bg-background border border-border">
+                <p className="text-xs uppercase tracking-wide text-muted mb-1">
+                  Order reference
+                </p>
+                <p className="font-mono text-lg font-semibold text-foreground">
+                  {orderNumber}
+                </p>
+                <p className="text-xs text-muted mt-1">
+                  Quote this if you contact us about your order.
+                </p>
+              </div>
+            )}
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center bg-primary text-white px-8 py-3 rounded-xl font-medium hover:bg-primary-hover transition-colors"
+            >
+              Continue shopping
+            </Link>
+          </div>
         </div>
       </div>
     );

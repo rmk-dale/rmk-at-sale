@@ -41,7 +41,14 @@ export type AuditAction =
    * named as the target. The entry's `changes` carries both lists.
    */
   | "admin.order_notify_change"
-  | "order.status_change";
+  | "order.status_change"
+  /**
+   * An admin added, removed, or changed the quantity of an item on an
+   * order still in `received` status. Kept separate from
+   * `order.status_change` because this one carries a stock effect per
+   * line, not a single before/after status.
+   */
+  | "order.items_change";
 
 export type AuditTargetType = "product" | "brand" | "admin" | "order";
 

@@ -16,6 +16,11 @@ import { invalidateProductCaches } from "@/lib/revalidate";
 import { asString } from "@/lib/validation";
 import { recordAudit } from "@/lib/models/auditLog";
 import { getClientIp } from "@/lib/rateLimit";
+import {
+  resolveOrderLineVariant,
+  stockReleaseFilterUpdate,
+  stockReserveFilterUpdate,
+} from "@/lib/orderStock";
 
 /** Raised inside the transaction when a reopen can't reclaim its stock. */
 class RestockUnavailableError extends Error {
@@ -136,41 +141,83 @@ export async function PATCH(
     const session = client.startSession();
     try {
       await session.withTransaction(async () => {
-        if (stockEffect === "released") {
-          // Returning units to inventory. Guarded by `stockReleased`, so
-          // cancel → reopen → cancel can no longer restock the same units
-          // twice and inflate inventory.
-          for (const item of order.items) {
-            await products.updateOne(
-              { _id: item.itemCode },
-              { $inc: { stock: item.quantity }, $set: { updatedAt: now } },
-              { session },
-            );
-          }
-        } else if (stockEffect === "reserved") {
-          // Reopening a cancelled order takes the units back out. This can
-          // fail — they may have been sold in the meantime — so it uses the
-          // same atomic `$gte` guard as checkout and aborts the whole
-          // transaction if any line comes up short.
-          for (const item of order.items) {
-            const updated = await products.findOneAndUpdate(
-              { _id: item.itemCode, stock: { $gte: item.quantity } },
-              { $inc: { stock: -item.quantity }, $set: { updatedAt: now } },
-              { session, returnDocument: "after" },
-            );
+        if (stockEffect === "released" || stockEffect === "reserved") {
+          // Which stock field a line actually holds units in depends on
+          // whether the product still has a matching variant cell today —
+          // read every product on the order once, up front, so each line
+          // below can resolve that itself instead of the blind root-`stock`
+          // write this used to be. See lib/orderStock.ts: touching only
+          // `stock` regardless of variant used to silently mis-restock
+          // cancelled orders for variant products.
+          const productIds = [...new Set(order.items.map((item) => item.itemCode))];
+          const relatedProducts = await products
+            .find({ _id: { $in: productIds } }, { session })
+            .toArray();
+          const productsById = new Map(relatedProducts.map((doc) => [doc._id, doc]));
 
-            if (!updated) {
-              const existing = await products.findOne(
-                { _id: item.itemCode },
-                { session },
+          if (stockEffect === "released") {
+            // Returning units to inventory. Guarded by `stockReleased`, so
+            // cancel → reopen → cancel can no longer restock the same units
+            // twice and inflate inventory. Best-effort per line: a product
+            // deleted since the order was placed has nothing left to
+            // credit, same as the blind update this replaced silently
+            // no-op'd on a missing document.
+            for (const item of order.items) {
+              const product = productsById.get(item.itemCode);
+              if (!product) continue;
+              const { activeVariant, activeVariantIndex } = resolveOrderLineVariant(
+                product,
+                item.color,
+                item.size,
               );
-              throw new RestockUnavailableError(
-                (existing ? productLabel(existing) : "") ||
-                  item.name ||
-                  item.description ||
-                  "Unknown item",
-                existing?.stock ?? 0,
+              const { filter, update } = stockReleaseFilterUpdate(
+                item.itemCode,
+                activeVariant,
+                activeVariantIndex,
+                item.quantity,
+                now,
               );
+              await products.updateOne(filter, update, { session });
+            }
+          } else {
+            // Reopening a cancelled order takes the units back out. This can
+            // fail — they may have been sold in the meantime — so it uses the
+            // same atomic `$gte` guard as checkout and aborts the whole
+            // transaction if any line comes up short.
+            for (const item of order.items) {
+              const product = productsById.get(item.itemCode);
+              const { activeVariant, activeVariantIndex } = product
+                ? resolveOrderLineVariant(product, item.color, item.size)
+                : { activeVariant: null, activeVariantIndex: -1 };
+              const { filter, update } = stockReserveFilterUpdate(
+                item.itemCode,
+                activeVariant,
+                activeVariantIndex,
+                item.quantity,
+                now,
+              );
+              const updated = await products.findOneAndUpdate(filter, update, {
+                session,
+                returnDocument: "after",
+              });
+
+              if (!updated) {
+                const existing = await products.findOne(
+                  { _id: item.itemCode },
+                  { session },
+                );
+                const available = existing
+                  ? (resolveOrderLineVariant(existing, item.color, item.size).activeVariant
+                      ?.stock ?? existing.stock)
+                  : 0;
+                throw new RestockUnavailableError(
+                  (existing ? productLabel(existing) : "") ||
+                    item.name ||
+                    item.description ||
+                    "Unknown item",
+                  available,
+                );
+              }
             }
           }
         }

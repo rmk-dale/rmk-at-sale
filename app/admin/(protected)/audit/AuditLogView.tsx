@@ -39,6 +39,7 @@ const ACTION_LABELS: Record<string, string> = {
   "admin.sessions_revoked": "signed out all sessions for",
   "admin.order_notify_change": "changed order notifications for",
   "order.status_change": "changed order status",
+  "order.items_change": "edited order items",
 };
 
 /** Prices are the reason most people will open this page — make them obvious. */

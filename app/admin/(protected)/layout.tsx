@@ -3,6 +3,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { requireAdmin } from "@/lib/adminGuard";
 import AdminLogoutButton from "@/components/admin/AdminLogoutButton";
+import { getAdminProducts } from "@/lib/models/product";
+import { summariseInventory } from "@/lib/stockAlerts";
 
 export default async function AdminProtectedLayout({
   children,
@@ -11,6 +13,27 @@ export default async function AdminProtectedLayout({
 }) {
   const admin = await requireAdmin();
   if (!admin) redirect("/admin/login");
+
+  // The count lives in the layout rather than on the Inventory page so it
+  // is visible from Orders, Collections and the rest — a badge you can
+  // only see once you have already navigated to the screen it describes is
+  // not telling anyone anything.
+  //
+  // This is cheap because `getAdminProducts` is the same per-container
+  // TTL cache the Inventory page reads, and the Inventory page renders
+  // inside this layout: on that route the two calls collapse to one Atlas
+  // query, and on every other admin route it is a cache hit for the
+  // length of the TTL. Worst case is one extra `find` per container per
+  // 10 seconds, which the M0 ops budget does not notice.
+  //
+  // Failure here must not take down the admin panel: an unreachable Atlas
+  // should cost the badge, not every page behind this layout.
+  let attentionCount = 0;
+  try {
+    attentionCount = summariseInventory(await getAdminProducts()).attentionCount;
+  } catch (err) {
+    console.error("[admin] Could not compute the inventory badge:", err);
+  }
 
   return (
     <div className="min-h-screen bg-[var(--color-background)]">
@@ -29,9 +52,17 @@ export default async function AdminProtectedLayout({
             </Link>
             <Link
               href="/admin"
-              className="text-sm text-zinc-600 hover:text-zinc-900 transition-colors"
+              className="text-sm text-zinc-600 hover:text-zinc-900 transition-colors flex items-center gap-1.5"
             >
               Inventory
+              {attentionCount > 0 && (
+                <span
+                  className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums"
+                  title={`${attentionCount} item${attentionCount === 1 ? "" : "s"} out of stock or running low`}
+                >
+                  {attentionCount}
+                </span>
+              )}
             </Link>
             <Link
               href="/admin/orders"

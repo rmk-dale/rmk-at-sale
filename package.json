@@ -21,7 +21,8 @@
     "check:photos": "node --experimental-strip-types scripts/check-photo-buckets.ts",
     "check:payload": "node --experimental-strip-types scripts/check-product-payload.ts",
     "check:bundles": "node --experimental-strip-types scripts/check-bundles.ts",
-    "check:richtext": "node --experimental-strip-types scripts/check-richtext.ts"
+    "check:richtext": "node --experimental-strip-types scripts/check-richtext.ts",
+    "check:stock": "node --experimental-strip-types scripts/check-stock-alerts.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

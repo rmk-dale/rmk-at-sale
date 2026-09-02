@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 import path from "path";
-import { escapeHtml } from "@/lib/validation";
+import { escapeHtml, formatPhoneNumber } from "@/lib/validation";
 
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 
@@ -237,6 +237,17 @@ export async function sendNewOrderAdminEmail(
     subtotal: number;
     bundleDiscount: number;
     total: number;
+    /**
+     * Set only for buyers outside RGOC. Whoever reads this is the person who
+     * decides whether the order is legitimate, so the address, the company
+     * and the declaration belong in the notification rather than one click
+     * away in the admin panel.
+     */
+    buyerType?: "internal" | "external";
+    buyerName?: string;
+    buyerCompany?: string;
+    buyerPhone?: string;
+    affiliationDeclaredAt?: Date;
   },
   adminOrdersUrl: string,
 ): Promise<void> {
@@ -251,6 +262,43 @@ export async function sendNewOrderAdminEmail(
   const safeOrderNumber = escapeHtml(order.orderNumber);
   const safeBuyerEmail = escapeHtml(order.buyerEmail);
   const totalUnits = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
+  // The email domain and the company sit next to each other deliberately.
+  // It is the one place a person can notice that they do not agree, which
+  // is the whole judgement this block exists to support.
+  const isExternalBuyer = order.buyerType === "external";
+  const declaredOn = order.affiliationDeclaredAt
+    ? new Intl.DateTimeFormat("en-PH", {
+        timeZone: "Asia/Manila",
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(order.affiliationDeclaredAt)
+    : null;
+
+  const buyerBlockHtml = isExternalBuyer
+    ? `
+          <br /><span style="display:inline-block;margin-top:8px;padding:2px 8px;border-radius:4px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:600;">OUTSIDE RGOC</span><br />
+          Name: ${escapeHtml(order.buyerName ?? "—")}<br />
+          Company: ${escapeHtml(order.buyerCompany ?? "—")}<br />
+          Contact: ${escapeHtml(formatPhoneNumber(order.buyerPhone))}${
+            declaredOn
+              ? `<br /><span style="color:#52525b;font-size:13px;">Declared a Rustan Group connection on ${escapeHtml(declaredOn)}</span>`
+              : ""
+          }`
+    : "";
+
+  const buyerTextLines = isExternalBuyer
+    ? [
+        `OUTSIDE RGOC`,
+        `Name: ${order.buyerName ?? "—"}`,
+        `Company: ${order.buyerCompany ?? "—"}`,
+        `Contact: ${formatPhoneNumber(order.buyerPhone)}`,
+        ...(declaredOn
+          ? [`Declared a Rustan Group connection on ${declaredOn}`]
+          : []),
+        "",
+      ]
+    : [];
 
   const rowsHtml = order.items
     .map((item) => {
@@ -303,6 +351,7 @@ export async function sendNewOrderAdminEmail(
     text:
       `New order ${order.orderNumber}\n\n` +
       `Buyer: ${order.buyerEmail}\n` +
+      (buyerTextLines.length > 0 ? `${buyerTextLines.join("\n")}\n` : "") +
       `Items (${totalUnits} pcs):\n${textLines.join("\n")}\n\n` +
       (discountApplied
         ? `Subtotal: ₱${order.subtotal.toFixed(2)}\nBundle discount: -₱${order.bundleDiscount.toFixed(2)}\n`
@@ -318,7 +367,7 @@ export async function sendNewOrderAdminEmail(
         <p style="color:#52525b;margin-top:0;">Someone needs to contact this buyer to finalize the order.</p>
         <p style="background:#f4f4f5;padding:12px 16px;border-radius:8px;">
           Order reference: <strong style="font-family:monospace;">${safeOrderNumber}</strong><br />
-          Buyer: <a href="mailto:${safeBuyerEmail}" style="color:#4f46e5;">${safeBuyerEmail}</a>
+          Buyer: <a href="mailto:${safeBuyerEmail}" style="color:#4f46e5;">${safeBuyerEmail}</a>${buyerBlockHtml}
         </p>
         <table style="width:100%;border-collapse:collapse;margin-top:8px;">
           <thead>
@@ -409,6 +458,93 @@ export async function sendAdminPasswordResetEmail(
         <p style="color: #71717a; font-size: 14px;">This link expires in 1 hour. If you didn't request this, you can ignore it.</p>
       </div>
     `,
+  };
+
+  await transporter.sendMail(mailOptions);
+}
+
+/**
+ * Tells a buyer their order was cancelled, and why.
+ *
+ * Cancelling used to be silent. That was survivable while everyone ordering
+ * sat in the same building and could ask; for someone at a partner company
+ * an order that simply stops existing has no explanation available to them
+ * at all. It carries the reason for the same practical purpose: a
+ * cancellation with none reads as arbitrary and produces exactly the support
+ * conversation the affiliation declaration was meant to prevent.
+ *
+ * Sent for EVERY cancellation, not only affiliation ones. An employee whose
+ * order was cancelled because an item ran out deserves the same message, and
+ * a template that only fires down one branch is a template nobody remembers
+ * to test.
+ *
+ * `reason` is written by an admin in a free-text field, so it is escaped
+ * like any other dynamic value here — see the note above
+ * sendNewOrderAdminEmail.
+ */
+export async function sendOrderCancelledEmail(
+  to: string,
+  order: {
+    orderNumber: string;
+    buyerName?: string;
+    placedAt?: Date;
+    reason?: string;
+  },
+): Promise<void> {
+  const safeOrderNumber = escapeHtml(order.orderNumber);
+  const greetingName = order.buyerName ? escapeHtml(order.buyerName) : "there";
+  const placedOn = order.placedAt
+    ? new Intl.DateTimeFormat("en-PH", {
+        timeZone: "Asia/Manila",
+        dateStyle: "long",
+      }).format(order.placedAt)
+    : null;
+
+  const reasonHtml = order.reason
+    ? `<p style="background:#f4f4f5;padding:12px 16px;border-radius:8px;margin-top:16px;"><strong>Reason:</strong> ${escapeHtml(order.reason)}</p>`
+    : "";
+
+  const mailOptions = {
+    from: `"RMK at Sale" <${process.env.SMTP_USER}>`,
+    to,
+    subject: `Your RMK at Sale order ${order.orderNumber} has been cancelled`,
+    text:
+      `Hi ${order.buyerName ?? "there"},\n\n` +
+      `We've cancelled order ${order.orderNumber}` +
+      (placedOn ? `, placed on ${placedOn}` : "") +
+      `. The items have gone back into stock and nothing was charged at any point.\n\n` +
+      (order.reason ? `Reason: ${order.reason}\n\n` : "") +
+      `If you think this is a mistake, reply to this email and we'll take another look.\n`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <img src="cid:logo" alt="RMK at Sale" style="width: 120px;" />
+        </div>
+        <h2 style="margin-bottom: 4px;">Your order has been cancelled</h2>
+        <p style="color:#52525b;margin-top:0;">Hi ${greetingName},</p>
+        <p>
+          We&rsquo;ve cancelled order
+          <strong style="font-family:monospace;">${safeOrderNumber}</strong>${
+            placedOn ? `, placed on ${escapeHtml(placedOn)}` : ""
+          }. The items have gone back into stock, and nothing was charged at
+          any point.
+        </p>
+        ${reasonHtml}
+        <p style="margin-top:24px;">
+          If you think this is a mistake, reply to this email and we&rsquo;ll
+          take another look.
+        </p>
+      </div>
+    `,
+    attachments: [
+      {
+        // One fully literal path, per the rule at the top of
+        // sendReceiptEmail. Do not factor this into a helper.
+        filename: "rwithtag.png",
+        path: path.join(process.cwd(), "public", "rwithtag.png"),
+        cid: "logo",
+      },
+    ],
   };
 
   await transporter.sendMail(mailOptions);

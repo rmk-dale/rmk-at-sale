@@ -660,6 +660,21 @@ export async function POST(req: NextRequest) {
             subtotal: receiptBreakdown.subtotal,
             bundleDiscount: receiptBreakdown.bundleDiscount,
             total: receiptTotal,
+            // Whoever reads this notification is the person who decides
+            // whether an outside order is legitimate, so the company and
+            // the declaration travel with it rather than sitting one click
+            // away in the admin panel.
+            buyerType,
+            ...(buyerType === "external"
+              ? {
+                  buyerName: session.buyerName,
+                  buyerCompany: session.buyerCompany,
+                  buyerPhone: session.buyerPhone,
+                  affiliationDeclaredAt: session.affiliationDeclaredAt
+                    ? new Date(session.affiliationDeclaredAt)
+                    : undefined,
+                }
+              : {}),
           },
           `${appUrl}/admin/orders`,
         );

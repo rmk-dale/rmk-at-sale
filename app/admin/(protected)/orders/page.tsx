@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+// lib/validation.ts imports nothing, so it is safe in a client component —
+// unlike lib/models/product.ts, which pulls in the MongoDB driver.
+import { formatPhoneNumber } from "@/lib/validation";
 import {
   evaluateBundles,
   MAX_QUANTITY_PER_LINE,
@@ -24,6 +27,18 @@ interface AdminOrder {
   _id: string;
   orderNumber?: string;
   buyerEmail: string;
+  /**
+   * Set on every order placed from now on. Absent on orders placed before
+   * outside buyers existed, which are internal by construction — so read it
+   * as `buyerType === "external"` and never as `!== "internal"`.
+   */
+  buyerType?: "internal" | "external";
+  buyerName?: string;
+  buyerCompany?: string;
+  /** E.164 as stored; rendered through formatPhoneNumber. */
+  buyerPhone?: string;
+  /** ISO string over the wire. */
+  affiliationDeclaredAt?: string;
   items: {
     itemCode: string;
     name?: string;
@@ -72,6 +87,26 @@ const STATUS_STYLES: Record<OrderStatus, string> = {
   cancelled: "bg-zinc-100 text-zinc-500",
 };
 
+/**
+ * The reason written into statusHistory, and mailed to the buyer, when an
+ * order is cancelled because its company could not be placed.
+ *
+ * A constant rather than free text so that every admin cancels with the same
+ * wording — this note is the customer-facing explanation as well as the
+ * internal record, and "not affiliated" typed at speed reads very
+ * differently from one person to the next.
+ */
+const NOT_AFFILIATED_NOTE =
+  "We could not establish your company's connection to the Rustan Group.";
+
+type BuyerFilter = "" | "internal" | "external";
+
+const BUYER_FILTERS: { label: string; value: BuyerFilter }[] = [
+  { label: "Everyone", value: "" },
+  { label: "RGOC", value: "internal" },
+  { label: "Outside RGOC", value: "external" },
+];
+
 const FILTERS: { label: string; value: "" | OrderStatus }[] = [
   { label: "All", value: "" },
   { label: "Received", value: "received" },
@@ -101,6 +136,7 @@ export default function AdminOrdersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"" | OrderStatus>("");
+  const [buyerFilter, setBuyerFilter] = useState<BuyerFilter>("");
   const [search, setSearch] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +158,7 @@ export default function AdminOrdersPage() {
     setLoading(true);
     const params = new URLSearchParams();
     if (filter) params.set("status", filter);
+    if (buyerFilter) params.set("buyerType", buyerFilter);
     if (search.trim()) params.set("search", search.trim());
 
     fetch(`/api/admin/orders?${params.toString()}`)
@@ -137,7 +174,7 @@ export default function AdminOrdersPage() {
         setError("Could not load orders.");
         setLoading(false);
       });
-  }, [filter, search]);
+  }, [filter, buyerFilter, search]);
 
   useEffect(() => {
     const timer = setTimeout(load, search ? 300 : 0);
@@ -155,14 +192,21 @@ export default function AdminOrdersPage() {
     ),
   };
 
-  const updateStatus = async (orderId: string, status: OrderStatus) => {
+  const updateStatus = async (
+    orderId: string,
+    status: OrderStatus,
+    note?: string,
+  ) => {
     setUpdatingId(orderId);
     setError(null);
     try {
       const res = await fetch(`/api/admin/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        // The note lands in statusHistory beside the acting admin and the
+        // timestamp, and is what the buyer is told. See the cancellation
+        // email in lib/email.ts.
+        body: JSON.stringify(note ? { status, note } : { status }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -371,7 +415,7 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {FILTERS.map((f) => (
           <button
             key={f.label}
@@ -379,6 +423,24 @@ export default function AdminOrdersPage() {
             className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
               filter === f.value
                 ? "bg-zinc-900 text-white"
+                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+
+        <span className="w-px h-6 bg-border mx-1" aria-hidden="true" />
+
+        {/* Finding outside orders is the whole review workflow: there is no
+            approval queue, so someone has to be able to look. */}
+        {BUYER_FILTERS.map((f) => (
+          <button
+            key={f.label}
+            onClick={() => setBuyerFilter(f.value)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+              buyerFilter === f.value
+                ? "bg-amber-600 text-white"
                 : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
             }`}
           >
@@ -409,8 +471,55 @@ export default function AdminOrdersPage() {
                   <p className="text-zinc-500 text-xs">
                     {new Date(order.createdAt).toLocaleString()}
                   </p>
+
+                  {/* The email domain and the company they named sit one
+                      line apart on purpose: whether those two agree is the
+                      entire judgement this block exists to support. */}
+                  {order.buyerType === "external" && (
+                    <div className="mt-2 pt-2 border-t border-border text-xs space-y-0.5">
+                      <p className="text-zinc-700">
+                        <span className="text-zinc-500">Name </span>
+                        {order.buyerName ?? "—"}
+                      </p>
+                      <p className="text-zinc-700">
+                        <span className="text-zinc-500">Company </span>
+                        {order.buyerCompany ?? "—"}
+                      </p>
+                      <p className="text-zinc-700">
+                        <span className="text-zinc-500">Contact </span>
+                        {order.buyerPhone ? (
+                          // A link because the reason this field exists is
+                          // that somebody is going to call it.
+                          <a
+                            href={`tel:${order.buyerPhone}`}
+                            className="text-indigo-600 hover:underline"
+                          >
+                            {formatPhoneNumber(order.buyerPhone)}
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </p>
+                      {order.affiliationDeclaredAt && (
+                        <p className="text-zinc-500">
+                          Declared a Rustan Group connection on{" "}
+                          {new Date(
+                            order.affiliationDeclaredAt,
+                          ).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
+                  {/* Amber rather than red: red is the storefront's primary
+                      colour and reads as an error, and an outside order is
+                      not one. */}
+                  {order.buyerType === "external" && (
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                      Outside RGOC
+                    </span>
+                  )}
                   <span
                     className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[order.status]}`}
                   >
@@ -659,6 +768,28 @@ export default function AdminOrdersPage() {
                     {ACTION_LABELS[next]}
                   </button>
                 ))}
+
+                {/* Not a new mechanism — the status PATCH already carries a
+                    note into statusHistory. This just means every admin
+                    cancels an unplaceable company with the same wording,
+                    which matters because that note is also what the buyer
+                    is told. */}
+                {order.buyerType === "external" &&
+                  order.status !== "cancelled" && (
+                    <button
+                      disabled={updatingId === order._id}
+                      onClick={() =>
+                        updateStatus(
+                          order._id,
+                          "cancelled",
+                          NOT_AFFILIATED_NOTE,
+                        )
+                      }
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                    >
+                      Cancel — not affiliated
+                    </button>
+                  )}
 
                 {order.status === "received" && (
                   <button

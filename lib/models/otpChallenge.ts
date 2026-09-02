@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { getDb } from "@/lib/mongodb";
 import { generateHash, verifyHash } from "@/lib/crypto";
+import type { CustomerBuyerProfile } from "@/lib/customerSession";
 
 /**
  * Server-side store for checkout OTP challenges.
@@ -25,7 +26,17 @@ import { generateHash, verifyHash } from "@/lib/crypto";
  * TTL index once they expire.
  */
 
-export interface OtpChallengeDoc {
+/**
+ * The challenge carries the buyer profile as well as the code.
+ *
+ * It is captured here, at the moment the address is, rather than posted
+ * with the order two requests later. That is what lets the profile be
+ * validated once and then bound by the session signature — and for the
+ * affiliation declaration it is the whole point: a declaration recorded
+ * against the address it was made for is evidence, while a boolean posted
+ * at checkout is something anyone can send.
+ */
+export interface OtpChallengeDoc extends CustomerBuyerProfile {
   _id: string; // opaque challenge id — this is what goes in the cookie
   email: string;
   otpHash: string;
@@ -74,6 +85,7 @@ export async function getOtpChallengesCollection() {
 export async function createOtpChallenge(
   email: string,
   otp: string,
+  profile: CustomerBuyerProfile,
 ): Promise<{ challengeId: string; expiresAt: Date }> {
   const challenges = await getOtpChallengesCollection();
   const now = new Date();
@@ -94,6 +106,7 @@ export async function createOtpChallenge(
   const expiresAt = new Date(now.getTime() + OTP_TTL_MS);
 
   await challenges.insertOne({
+    ...profile,
     _id: challengeId,
     email,
     otpHash: generateHash(`otp|${email}|${otp}`),
@@ -106,7 +119,7 @@ export async function createOtpChallenge(
 }
 
 export type ConsumeResult =
-  | { status: "ok"; email: string }
+  | { status: "ok"; email: string; profile: CustomerBuyerProfile }
   | { status: "invalid"; attemptsRemaining: number }
   | { status: "expired" }
   | { status: "locked" };
@@ -183,7 +196,21 @@ export async function consumeOtpChallenge(
     return { status: "expired" };
   }
 
-  return { status: "ok", email: challenge.email };
+  return {
+    status: "ok",
+    email: challenge.email,
+    // Read back off the challenge rather than trusted from the verify
+    // request, which carries nothing but a six-digit code. Whatever the
+    // buyer typed on the email step is what reaches the order.
+    profile: {
+      buyerType: challenge.buyerType,
+      buyerName: challenge.buyerName,
+      buyerCompany: challenge.buyerCompany,
+      buyerPhone: challenge.buyerPhone,
+      affiliationDeclaredAt: challenge.affiliationDeclaredAt,
+      affiliationVersion: challenge.affiliationVersion,
+    },
+  };
 }
 
 /** Drops a challenge outright, e.g. once a session has been issued. */

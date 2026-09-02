@@ -23,7 +23,8 @@
     "check:bundles": "node --experimental-strip-types scripts/check-bundles.ts",
     "check:richtext": "node --experimental-strip-types scripts/check-richtext.ts",
     "check:stock": "node --experimental-strip-types scripts/check-stock-alerts.ts",
-    "check:buyer": "node --experimental-strip-types scripts/check-buyer-policy.ts"
+    "check:buyer": "node --experimental-strip-types scripts/check-buyer-policy.ts",
+    "check:session": "node --experimental-strip-types scripts/check-session.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

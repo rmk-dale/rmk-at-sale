@@ -4,6 +4,7 @@ import { generateOTP } from "@/lib/crypto";
 import { sendOTPEmail } from "@/lib/email";
 import { asEmail } from "@/lib/validation";
 import {
+  classifyBuyer,
   disallowedEmailMessage,
   isAllowedOrderEmail,
 } from "@/lib/orderPolicy";
@@ -112,7 +113,12 @@ export async function POST(req: NextRequest) {
     // The challenge lives in the database, not in the cookie. The cookie
     // now carries only an opaque id, so the attempt counter recorded
     // against the challenge cannot be rewound by replaying an older cookie.
-    const { challengeId } = await createOtpChallenge(email, otp);
+    // Only the classification for now — the route still refuses outside
+    // addresses a few lines above, so this is always "internal" until the
+    // rest of the outside-buyer flow lands.
+    const { challengeId } = await createOtpChallenge(email, otp, {
+      buyerType: classifyBuyer(email),
+    });
 
     await sendOTPEmail(email, otp);
 

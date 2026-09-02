@@ -17,6 +17,13 @@
  */
 process.env.JWT_SECRET ||= "check-session-only-not-a-real-secret";
 
+// Marks the file as a module. Without it TypeScript treats it as a script,
+// which forbids the top-level await below and puts `external` in the global
+// scope where it collides with lib.dom's own declaration. Neither shows up
+// at runtime, because --experimental-strip-types only erases types — so this
+// is the kind of break only `tsc --noEmit` finds.
+export {};
+
 const { signCustomerSession, verifyCustomerSession } = await import(
   "../lib/customerSession.ts"
 );

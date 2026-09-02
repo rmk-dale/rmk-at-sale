@@ -34,6 +34,7 @@ import {
   canonicalEmail,
   formatPhoneNumber,
 } from "../lib/validation.ts";
+import { RATE_LIMITS } from "../lib/rateLimit.ts";
 
 let failed = 0;
 
@@ -269,6 +270,36 @@ check(
       canonicalEmail(email).split("@")[1] === email.toLowerCase().split("@")[1],
   ),
   "the domain decides refusal and classification, so it must survive intact",
+);
+
+
+// ---------------------------------------------------------------------------
+
+section(
+  "Rate-limit shape. These are relationships rather than values: the numbers\n" +
+    "are tunable, but a sub-ceiling above the ceiling it sits under reserves\n" +
+    "nothing, and fails silently while looking configured.",
+);
+
+check(
+  "the external hourly ceiling sits below the site-wide one",
+  RATE_LIMITS.otpSendGlobalExternal.limit < RATE_LIMITS.otpSendGlobal.limit,
+  `${RATE_LIMITS.otpSendGlobalExternal.limit} of ${RATE_LIMITS.otpSendGlobal.limit}/hour, leaving ` +
+    `${RATE_LIMITS.otpSendGlobal.limit - RATE_LIMITS.otpSendGlobalExternal.limit} for staff`,
+);
+check(
+  "both hourly ceilings share a window",
+  RATE_LIMITS.otpSendGlobalExternal.windowMs === RATE_LIMITS.otpSendGlobal.windowMs,
+);
+check(
+  "the external per-IP limit is tighter than the office one",
+  RATE_LIMITS.otpRequestPerIpExternal.limit < RATE_LIMITS.otpRequestPerIp.limit,
+  `${RATE_LIMITS.otpRequestPerIpExternal.limit} vs ${RATE_LIMITS.otpRequestPerIp.limit} per 15 min`,
+);
+check(
+  "an outside buyer still gets more than one attempt",
+  RATE_LIMITS.otpRequestPerIpExternal.limit >= 3,
+  "a mistyped address must not lock someone out of the sale",
 );
 
 // ---------------------------------------------------------------------------

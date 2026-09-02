@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCartStore, evaluateCart, groupCartLines } from "@/lib/store";
 import { useCatalog } from "@/lib/useCatalog";
 import { useHydrated } from "@/lib/useHydrated";
@@ -18,6 +18,60 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { classifyBuyer, refusedDomainReason } from "@/lib/orderPolicy";
+
+/*
+  lib/orderPolicy.ts imports nothing, so it is safe to pull into a client
+  component — see the note on lib/models/product.ts for the module that is
+  not. Only the domain lists are used here, and only to tell the shopper
+  what will happen before they wait for a round trip. The server decides:
+  env-configured additions to those lists are not present in the client
+  bundle, so a domain the server refuses may still look fine here, and that
+  is the right way round.
+*/
+
+/*
+  TODO(before launch): these three have to be real before external ordering
+  is switched on, and the retention line is a promise that needs
+  scripts/scrub-buyer-details.ts actually being run.
+*/
+const RUSTAN_CONNECTION_EXAMPLES =
+  "[confirm this list: e.g. subsidiaries, concessionaires, suppliers and agency partners]";
+const DPO_CONTACT = "[Data Protection Officer — email]";
+const DPO_RESPONSE_DAYS = "15";
+const RETENTION_AFTER_SALE = "6 months";
+
+/** What the address in the box looks like, as far as the browser can tell. */
+type EmailClass =
+  | "unknown"
+  | "internal"
+  | "external"
+  | "refused-personal"
+  | "refused-disposable";
+
+/**
+ * Classify what has been typed so far.
+ *
+ * Returns "unknown" until the value actually looks like a finished address.
+ * Without that, the extra fields flash open and shut while someone types
+ * their way through "juan@a", "juan@ac", "juan@acme." — which reads as the
+ * form malfunctioning.
+ */
+function classifyTypedEmail(value: string): EmailClass {
+  const trimmed = value.trim().toLowerCase();
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0 || at === trimmed.length - 1) return "unknown";
+
+  const domain = trimmed.slice(at + 1);
+  if (!/\.[a-z]{2,}$/.test(domain)) return "unknown";
+
+  const refusal = refusedDomainReason(trimmed);
+  if (refusal) {
+    return refusal === "personal" ? "refused-personal" : "refused-disposable";
+  }
+
+  return classifyBuyer(trimmed);
+}
 
 export default function CartPage() {
   // The money comes from `bundles` below rather than `getTotal()`: the
@@ -41,6 +95,54 @@ export default function CartPage() {
   const [loading, setLoading] = useState(false);
   const [orderNumber, setOrderNumber] = useState("");
   const [error, setError] = useState("");
+
+  // Collected only from buyers outside RGOC.
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerCompany, setBuyerCompany] = useState("");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [declared, setDeclared] = useState(false);
+  const [emailClass, setEmailClass] = useState<EmailClass>("unknown");
+
+  const isExternal = emailClass === "external";
+  const isRefused =
+    emailClass === "refused-personal" || emailClass === "refused-disposable";
+
+  /*
+    Reclassify the address, and clear the outside-buyer fields the moment it
+    stops being an outside address.
+
+    Clearing here rather than in an effect keyed on the classification is
+    deliberate on two counts. It is one transition rather than a render in
+    between, so the fields can never be briefly hidden while still holding
+    values; and "clear, do not merely hide" is the actual requirement.
+    Someone can type an outside address, fill all three fields, tick the
+    declaration, then realise they meant to use their RGOC address — if the
+    values only stopped being rendered they would still be posted, recording
+    a declaration against an order that never needed one. That is precisely
+    the record that must not exist.
+  */
+  const applyEmailClass = (value: string) => {
+    const next = classifyTypedEmail(value);
+    setEmailClass(next);
+
+    if (next !== "external") {
+      setBuyerName("");
+      setBuyerCompany("");
+      setBuyerPhone("");
+      setDeclared(false);
+    }
+  };
+
+  /*
+    Debounced rather than per-keystroke: 300ms is long enough that the block
+    opens once, when the address is finished, instead of tracking the typing
+    through "juan@a", "juan@ac", "juan@acme.". The blur handler on the field
+    re-runs it immediately, so tabbing away never leaves a stale state.
+  */
+  useEffect(() => {
+    const handle = setTimeout(() => applyEmailClass(email), 300);
+    return () => clearTimeout(handle);
+  }, [email]);
 
   // Held so each line can check itself against current prices and stock:
   // the cart persists to localStorage and can outlive what it points at.
@@ -86,7 +188,21 @@ export default function CartPage() {
       const res = await fetch("/api/auth/otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify(
+          // The extra fields are sent only when they are actually being
+          // asked for. The server ignores them otherwise, but not sending
+          // them at all is what makes that easy to verify from the network
+          // tab rather than by reading the route.
+          isExternal
+            ? {
+                email,
+                name: buyerName,
+                company: buyerCompany,
+                phone: buyerPhone,
+                declared,
+              }
+            : { email },
+        ),
       });
 
       const data = await res.json();
@@ -239,31 +355,64 @@ export default function CartPage() {
                     </li>
                   </ul>
                   <p>
+                    <strong>Orders from outside RGOC.</strong> This sale is for
+                    the Rustan Group. If you are ordering from a company email
+                    address that is not @rgoc.com.ph, you are confirming that
+                    your company is part of, or works with, the Rustan Group —{" "}
+                    {RUSTAN_CONNECTION_EXAMPLES}.
+                  </p>
+                  <p>
+                    Our team checks this before an order is handed over. If we
+                    cannot establish the connection, we may cancel your order at
+                    any point before handover — including after it has been
+                    confirmed — and we will email you to say so. Cancelled
+                    orders return the items to stock; nothing is charged at any
+                    stage of this sale.
+                  </p>
+                  <p>
                     By submitting this form, you confirm that you have read and
                     agreed to the terms and conditions above.
                   </p>
                 </>
               ) : (
                 <>
-                  <ul className="list-disc pl-5 space-y-2">
-                    <li>
-                      We only collect your RGOC email address to process and
-                      track your order.
-                    </li>
-                    <li>
-                      A member of our team may contact you using the email
-                      address provided to finalize your order and arrange
-                      payment and pick-up details.
-                    </li>
-                    <li>
-                      We will never ask for your password, OTP, credit card
-                      details, or other sensitive account information.
-                    </li>
-                    <li>
-                      Your information will be kept strictly confidential and
-                      will not be shared with or disclosed to third parties.
-                    </li>
-                  </ul>
+                  <p>
+                    <strong>What we collect.</strong> When you order from this
+                    store we collect your email address and the contents of your
+                    order. If you are ordering from outside RGOC, we also
+                    collect your full name, the company you are ordering for, a
+                    contact number, and a record that you confirmed your
+                    company&apos;s connection to the Rustan Group.
+                  </p>
+                  <p>
+                    <strong>Why we collect it.</strong> To send you a checkout
+                    code, confirm the items you ordered are available, check
+                    that this sale is open to you, issue your receipt, and
+                    arrange payment and pick-up. We do not use any of it for
+                    marketing.
+                  </p>
+                  <p>
+                    <strong>Who sees it.</strong> Staff of Rustan Marketing
+                    Corporation handling this sale. Your order is emailed to the
+                    assigned staff and your receipt is emailed to you. We will
+                    never ask for your password, OTP, credit card details, or
+                    other sensitive account information. We do not sell or
+                    disclose your information to anyone else, except where the
+                    law requires it.
+                  </p>
+                  <p>
+                    <strong>How long we keep it.</strong> Order records are kept
+                    for the duration of the sale and for {RETENTION_AFTER_SALE}{" "}
+                    after it closes, so we can answer questions about an order.
+                    After that we remove your name, company and contact number
+                    from the record.
+                  </p>
+                  <p>
+                    <strong>Your rights.</strong> Under the Data Privacy Act of
+                    2012 you may ask to see what we hold about you, have it
+                    corrected, or have it deleted. Write to {DPO_CONTACT} and we
+                    will respond within {DPO_RESPONSE_DAYS} days.
+                  </p>
                   <p>
                     By submitting this form, you confirm that you have read and
                     agreed to the Data Privacy Policy above.
@@ -410,25 +559,153 @@ export default function CartPage() {
                   className="space-y-4 animate-in slide-in-from-right-4 duration-300"
                 >
                   <div>
-                    <label className="block text-sm font-medium text-muted mb-2">
+                    <label
+                      htmlFor="checkout-email"
+                      className="block text-sm font-medium text-muted mb-2"
+                    >
                       Work email address
                     </label>
                     <input
+                      id="checkout-email"
                       type="email"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-white border border-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                      // Re-runs the check immediately on tab-out, so the
+                      // debounce above never leaves a stale state on screen.
+                      onBlur={() => applyEmailClass(email)}
+                      className={`w-full bg-white border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all ${
+                        isRefused ? "border-primary" : "border-border"
+                      }`}
                       placeholder="you@rgoc.com.ph"
                     />
-                    {/* Stated up front so an employee using a personal
-                        address finds out here rather than after submitting.
-                        The server is still the authority — see
+
+                    {/* Stated up front so someone using a personal address
+                        finds out here rather than after submitting. The
+                        server is still the authority — see
                         lib/orderPolicy.ts. */}
-                    <p className="mt-2 text-xs text-muted">
-                      Ordering is limited to company email addresses.
-                    </p>
+                    {!isRefused && (
+                      <p className="mt-2 text-xs text-muted">
+                        Company email addresses only — RGOC or a partner
+                        company.
+                      </p>
+                    )}
+
+                    {/* Named a way forward rather than only saying no. This
+                        is the message most likely to produce a support
+                        question, so it is worth the extra clause. */}
+                    {isRefused && (
+                      <p className="mt-2 text-xs text-primary leading-relaxed">
+                        {emailClass === "refused-disposable"
+                          ? "We can't send checkout codes to that email provider. Please use your work address."
+                          : "This sale takes orders from company email addresses. Please use your work address — or ask your RGOC contact to order for you."}
+                      </p>
+                    )}
                   </div>
+
+                  {/*
+                    Everything here exists for one reason — this buyer is
+                    outside RGOC — so it is grouped into one block rather
+                    than scattered among the standard fields, where it would
+                    read as three unexplained extra questions.
+                  */}
+                  {isExternal && (
+                    <div className="rounded-xl border border-accent/60 bg-accent/5 p-4 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <p className="text-xs text-foreground leading-relaxed">
+                        Ordering from outside RGOC — we just need someone to
+                        contact about the handover.
+                      </p>
+
+                      <div>
+                        <label
+                          htmlFor="buyer-name"
+                          className="block text-sm font-medium text-muted mb-2"
+                        >
+                          Full name
+                        </label>
+                        <input
+                          id="buyer-name"
+                          type="text"
+                          required
+                          value={buyerName}
+                          onChange={(e) => setBuyerName(e.target.value)}
+                          className="w-full bg-white border border-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                          placeholder="Juan Dela Cruz"
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="buyer-company"
+                          className="block text-sm font-medium text-muted mb-2"
+                        >
+                          Company
+                        </label>
+                        <input
+                          id="buyer-company"
+                          type="text"
+                          required
+                          value={buyerCompany}
+                          onChange={(e) => setBuyerCompany(e.target.value)}
+                          className="w-full bg-white border border-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                          placeholder="Acme Retail, Inc."
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="buyer-phone"
+                          className="block text-sm font-medium text-muted mb-2"
+                        >
+                          Contact number
+                        </label>
+                        <input
+                          id="buyer-phone"
+                          type="tel"
+                          inputMode="tel"
+                          required
+                          value={buyerPhone}
+                          onChange={(e) => setBuyerPhone(e.target.value)}
+                          className="w-full bg-white border border-border rounded-xl px-4 py-3 text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                          placeholder="0917 123 4567"
+                        />
+                        <p className="mt-2 text-xs text-muted">
+                          Used only to confirm your order and arrange pickup.
+                        </p>
+                      </div>
+
+                      {/*
+                        A declaration, not a consent — which is why it
+                        toggles directly instead of opening a document the
+                        way Terms and Privacy do. The clause it summarises
+                        is in the Terms modal linked just below.
+                      */}
+                      <label
+                        htmlFor="buyer-declared"
+                        className={`flex items-start gap-3 cursor-pointer p-4 border rounded-xl transition-colors ${
+                          declared
+                            ? "border-primary/50 bg-primary/5"
+                            : "border-border bg-white hover:bg-surface"
+                        }`}
+                      >
+                        <div className="flex items-center h-5 mt-0.5">
+                          <input
+                            id="buyer-declared"
+                            type="checkbox"
+                            required
+                            checked={declared}
+                            onChange={(e) => setDeclared(e.target.checked)}
+                            className="w-4 h-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-background bg-background cursor-pointer"
+                          />
+                        </div>
+                        <span className="text-sm text-muted leading-relaxed">
+                          I confirm my company is part of or works with the
+                          Rustan Group. Orders we can&apos;t verify may be
+                          cancelled.
+                        </span>
+                      </label>
+                    </div>
+                  )}
 
                   <div className="space-y-3 pt-4">
                     <label 
@@ -490,7 +767,13 @@ export default function CartPage() {
 
                   {error && <p className="text-red-500 text-sm">{error}</p>}
                   <button
-                    disabled={loading || !acceptedTerms || !acceptedPrivacy}
+                    disabled={
+                      loading ||
+                      !acceptedTerms ||
+                      !acceptedPrivacy ||
+                      isRefused ||
+                      (isExternal && !declared)
+                    }
                     type="submit"
                     className="w-full flex items-center justify-center gap-2 bg-primary text-white py-3.5 rounded-xl font-medium disabled:opacity-50 disabled:pointer-events-none hover:bg-primary-hover transition-colors mt-2"
                   >

@@ -2,15 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { generateOTP } from "@/lib/crypto";
 import { sendOTPEmail } from "@/lib/email";
-import { asEmail } from "@/lib/validation";
 import {
+  asCompanyName,
+  asEmail,
+  asPersonName,
+  asPhoneNumber,
+  canonicalEmail,
+} from "@/lib/validation";
+import {
+  AFFILIATION_VERSION,
+  EXTERNAL_ORDERS_ENABLED,
   classifyBuyer,
   disallowedEmailMessage,
-  isAllowedOrderEmail,
+  loggableDomain,
+  refusedDomainMessage,
+  refusedDomainReason,
 } from "@/lib/orderPolicy";
 import {
   OTP_CHALLENGE_COOKIE,
   sessionCookieOptions,
+  type CustomerBuyerProfile,
 } from "@/lib/customerSession";
 import {
   RATE_LIMITS,
@@ -42,19 +53,112 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // The strongest control in this flow. Refusing to send a code to
-    // anything but a company address means an outsider never gets a
-    // session at all, so the rate limits below are guarding against
-    // misuse by staff rather than against anonymous attack.
+    // ---------------------------------------------------------------
+    // Admission. Three questions, in this order, and all of them before
+    // any rate limiter is touched.
     //
-    // Checked before the rate limiters on purpose: an outside address
-    // should not be able to consume the per-IP or global send budget and
-    // deny codes to real employees.
-    if (!isAllowedOrderEmail(email)) {
+    // The ordering is not stylistic. Every checkRateLimit call records an
+    // attempt, so anything checked after a limiter has already spent part
+    // of a budget that real buyers need. A refused address must cost us
+    // nothing at all.
+    // ---------------------------------------------------------------
+
+    // 1. Is this domain refused outright? Consumer mailboxes and throwaway
+    //    services. This sale is for the Rustan Group and the companies it
+    //    works with, so an outside buyer is expected to have a work
+    //    address.
+    const refusal = refusedDomainReason(email);
+    if (refusal) {
+      // The domain only. It is enough to tell, after a week, whether this
+      // rule is costing real orders; the full address is personal data
+      // with no business in an application log.
+      console.warn(
+        `[otp] refused ${refusal} domain: ${loggableDomain(email)}`,
+      );
+      return NextResponse.json(
+        { error: refusedDomainMessage(refusal) },
+        { status: 403 },
+      );
+    }
+
+    // 2. Which side of the company boundary is this?
+    const buyerType = classifyBuyer(email);
+
+    if (buyerType === "external" && !EXTERNAL_ORDERS_ENABLED) {
       return NextResponse.json(
         { error: disallowedEmailMessage() },
         { status: 403 },
       );
+    }
+
+    // 3. An outside buyer has to say who they are and declare their
+    //    connection to the group. Collected here, at the same moment as
+    //    the address, rather than at checkout — see the note on
+    //    OtpChallengeDoc for why that matters for the declaration in
+    //    particular.
+    let profile: CustomerBuyerProfile = { buyerType };
+
+    if (buyerType === "external") {
+      // Reaching here already implies the body was an object — a
+      // non-object could not have produced a valid address above — but the
+      // narrowing is written out rather than relied upon, so a later edit
+      // to the address parsing cannot quietly turn this into a cast of a
+      // string.
+      const raw = (
+        typeof body === "object" && body !== null ? body : {}
+      ) as Record<string, unknown>;
+
+      const buyerName = asPersonName(raw.name);
+      if (!buyerName) {
+        return NextResponse.json(
+          { error: "Enter the name this order should be handed to." },
+          { status: 400 },
+        );
+      }
+
+      const buyerCompany = asCompanyName(raw.company);
+      if (!buyerCompany) {
+        return NextResponse.json(
+          { error: "Enter the company you're ordering for." },
+          { status: 400 },
+        );
+      }
+
+      const buyerPhone = asPhoneNumber(raw.phone);
+      if (!buyerPhone) {
+        return NextResponse.json(
+          {
+            error:
+              "Enter a number we can reach you on — 0917 123 4567.",
+          },
+          { status: 400 },
+        );
+      }
+
+      // Strictly true, not merely truthy. A declaration is the one field
+      // here that is worth something later, when somebody has to decide
+      // whether to cancel an order, so it should never be satisfiable by
+      // a stray "yes" or a 1.
+      if (raw.declared !== true) {
+        return NextResponse.json(
+          {
+            error:
+              "Please confirm your company's connection to the Rustan Group.",
+          },
+          { status: 400 },
+        );
+      }
+
+      profile = {
+        buyerType,
+        buyerName,
+        buyerCompany,
+        buyerPhone,
+        // The server's clock, never the client's. The whole value of this
+        // record is that we wrote it.
+        affiliationDeclaredAt: Date.now(),
+        affiliationVersion: AFFILIATION_VERSION,
+      };
     }
 
     // This endpoint sends mail from our SMTP account to an address chosen
@@ -63,11 +167,26 @@ export async function POST(req: NextRequest) {
     // sending domain blacklisted. Limited per IP and per target address —
     // the second matters because rotating IPs is easy, and repeatedly
     // mailing one victim is the abuse that actually hurts them.
+    //
+    // Outside buyers are limited on their own per-IP key rather than a
+    // tighter shared one: the whole office is behind a single corporate
+    // NAT, so a limit strict enough to mean anything against a stranger
+    // would lock out the fourth colleague to check out that afternoon.
+    //
+    // The per-address key is the canonical form of the address, so that
+    // "juan+1@" and "juan+2@" — one mailbox as far as the mail server is
+    // concerned — cannot each carry their own allowance.
     const ip = getClientIp(req);
+    const isExternal = buyerType === "external";
     const limit = await checkRateLimits([
-      { key: `otp-send:ip:${ip}`, rule: RATE_LIMITS.otpRequestPerIp },
       {
-        key: `otp-send:email:${hashIdentifier(email)}`,
+        key: isExternal ? `otp-send:ext:ip:${ip}` : `otp-send:ip:${ip}`,
+        rule: isExternal
+          ? RATE_LIMITS.otpRequestPerIpExternal
+          : RATE_LIMITS.otpRequestPerIp,
+      },
+      {
+        key: `otp-send:email:${hashIdentifier(canonicalEmail(email))}`,
         rule: RATE_LIMITS.otpRequestPerEmail,
       },
     ]);
@@ -77,6 +196,33 @@ export async function POST(req: NextRequest) {
         limit,
         "Too many code requests. Please wait a few minutes before trying again.",
       );
+    }
+
+    // Ceiling on codes sent to outside addresses, checked before the
+    // site-wide one below.
+    //
+    // That order is what makes it reserve capacity rather than merely
+    // report it: an outside request that trips this one never reaches the
+    // shared counter, so it cannot spend from the budget staff depend on.
+    // Reversing these two lines would leave the reservation looking
+    // configured while doing nothing.
+    if (isExternal) {
+      const externalLimit = await checkRateLimit(
+        "otp-send:global:external",
+        RATE_LIMITS.otpSendGlobalExternal,
+      );
+
+      if (!externalLimit.ok) {
+        console.warn(
+          `[otp] external hourly send ceiling reached ` +
+            `(${RATE_LIMITS.otpSendGlobalExternal.limit}/hour). Staff sends are ` +
+            `unaffected. Latest request from ip=${ip}.`,
+        );
+        return rateLimitResponse(
+          externalLimit,
+          "We can't send checkout codes to outside addresses right now. Please try again shortly.",
+        );
+      }
     }
 
     // Site-wide ceiling on codes sent per hour.
@@ -113,12 +259,7 @@ export async function POST(req: NextRequest) {
     // The challenge lives in the database, not in the cookie. The cookie
     // now carries only an opaque id, so the attempt counter recorded
     // against the challenge cannot be rewound by replaying an older cookie.
-    // Only the classification for now — the route still refuses outside
-    // addresses a few lines above, so this is always "internal" until the
-    // rest of the outside-buyer flow lands.
-    const { challengeId } = await createOtpChallenge(email, otp, {
-      buyerType: classifyBuyer(email),
-    });
+    const { challengeId } = await createOtpChallenge(email, otp, profile);
 
     await sendOTPEmail(email, otp);
 
@@ -133,14 +274,21 @@ export async function POST(req: NextRequest) {
       success: true,
       message: "A checkout code is on its way.",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error generating OTP:", error);
 
-    // Nodemailer SMTP rejection (e.g. "550 5.1.1 The email account that you tried to reach does not exist")
+    // Nodemailer SMTP rejection (e.g. "550 5.1.1 The email account that you
+    // tried to reach does not exist"). Narrowed rather than typed `any`,
+    // which the lint rule refuses and which would let a typo here read as
+    // undefined and silently fall through to a 500.
+    const smtp = (error ?? {}) as {
+      responseCode?: unknown;
+      rejected?: unknown;
+    };
     if (
-      error.responseCode === 550 ||
-      error.responseCode === 553 ||
-      (error.rejected && error.rejected.length > 0)
+      smtp.responseCode === 550 ||
+      smtp.responseCode === 553 ||
+      (Array.isArray(smtp.rejected) && smtp.rejected.length > 0)
     ) {
       return NextResponse.json(
         { error: "This email address does not exist or cannot receive mail." },

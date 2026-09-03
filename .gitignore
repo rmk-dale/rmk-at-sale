@@ -45,3 +45,4 @@ next-env.d.ts
 /repo-snapshot.tgz
 /email-original-snapshot.ts
 /public/_to_delete/
+/_to_delete/

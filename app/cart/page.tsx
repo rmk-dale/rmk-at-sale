@@ -36,9 +36,9 @@ import { classifyBuyer, refusedDomainReason } from "@/lib/orderPolicy";
   scripts/scrub-buyer-details.ts actually being run.
 */
 const RUSTAN_CONNECTION_EXAMPLES =
-  "[confirm this list: e.g. subsidiaries, concessionaires, suppliers and agency partners]";
-const DPO_CONTACT = "[Data Protection Officer — email]";
-const DPO_RESPONSE_DAYS = "15";
+  "[Rustan Group of Companies]";
+const DPO_CONTACT = "[ctescalo@rgoc.com.ph]";
+const DPO_RESPONSE_DAYS = "3-5 business days";
 const RETENTION_AFTER_SALE = "6 months";
 
 /** What the address in the box looks like, as far as the browser can tell. */

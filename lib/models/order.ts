@@ -1,6 +1,7 @@
 import { ObjectId, type ClientSession, type Db } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import type { OrderStatus } from "@/lib/orderTransitions";
+import type { BuyerType } from "@/lib/orderPolicy";
 
 // The status machine lives in lib/orderTransitions.ts, free of database
 // imports so it can be tested in isolation. Re-exported here so callers
@@ -48,6 +49,45 @@ export interface OrderDoc {
   /** Human-readable tracking reference, e.g. "RMK-2026-000042". */
   orderNumber: string;
   buyerEmail: string;
+  /**
+   * The buyer's address reduced to one form per mailbox — see
+   * `canonicalEmail`. Exists so the daily order cap counts a person rather
+   * than a spelling: Gmail treats "juan+1@" and "juan+2@" as one inbox, and
+   * counting them separately handed anyone an unlimited supply of fresh
+   * daily allowances.
+   *
+   * `buyerEmail` above stays exactly what the buyer typed, because that is
+   * where the receipt has to go.
+   */
+  buyerEmailKey?: string;
+  /**
+   * Which side of the company boundary this buyer was on when the order was
+   * placed.
+   *
+   * Optional because orders placed before outside buyers existed have no
+   * value here, and backfilling one would be inventing data. Absent reads as
+   * "internal" — not an assumption but a fact, since an outside address
+   * could not obtain a session at all until then.
+   */
+  buyerType?: BuyerType;
+  /** Set only for external buyers, from the signed session. */
+  buyerName?: string;
+  buyerCompany?: string;
+  /** E.164. Rendered for humans by `formatPhoneNumber`. */
+  buyerPhone?: string;
+  /**
+   * When the buyer declared their company's connection to the Rustan Group,
+   * on the server's clock, and which wording they were shown.
+   *
+   * This is the record that stands behind a cancellation. Without it, an
+   * order cancelled for affiliation is one person's judgement against
+   * another's memory of a checkbox that no longer exists on any screen. The
+   * version matters because a mid-sale reword would otherwise leave orders
+   * on either side of it agreeing to different statements with nothing to
+   * say which.
+   */
+  affiliationDeclaredAt?: Date;
+  affiliationVersion?: string;
   items: OrderItem[];
   /**
    * What the lines came to before the bundle rules — the plain sum of
@@ -111,6 +151,11 @@ export async function getOrdersCollection() {
         { unique: true, sparse: true },
       ),
       collection.createIndex({ buyerEmail: 1, createdAt: -1 }),
+      // The daily order cap counts against this, inside the checkout
+      // transaction, so it is on the hot path of every order placed.
+      collection.createIndex({ buyerEmailKey: 1, createdAt: -1 }),
+      // Lets the admin list filter to outside orders without scanning.
+      collection.createIndex({ buyerType: 1, createdAt: -1 }),
     ]).catch((err) => console.error("Failed to ensure order indexes:", err));
   }
 

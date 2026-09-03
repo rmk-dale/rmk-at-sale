@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { ObjectId } from "mongodb";
+import { sendOrderCancelledEmail } from "@/lib/email";
 import { requireAdmin } from "@/lib/adminGuard";
 import { productLabel } from "@/lib/models/product";
 import clientPromise, { getDb } from "@/lib/mongodb";
@@ -272,6 +273,43 @@ export async function PATCH(
       // Cancelling or restocking an order touches several products at
       // once, so this clears every product page rather than one.
       invalidateProductCaches();
+    }
+
+    // Tell the buyer their order is gone, and why.
+    //
+    // After the response and outside the transaction, the same way checkout
+    // sends its receipt: the status change is already committed, so this is
+    // a delivery concern that must not be able to roll it back or hold the
+    // admin's request open behind a slow SMTP connection. `after` is what
+    // keeps the work alive past the response on serverless, where a bare
+    // promise would be killed when the function freezes.
+    //
+    // Fires on every cancellation rather than only the affiliation ones. An
+    // employee whose order was cancelled because an item ran out deserves
+    // the same message, and a branch-specific send is one nobody tests.
+    if (status === "cancelled") {
+      const cancelledOrder = order;
+      after(async () => {
+        try {
+          await sendOrderCancelledEmail(cancelledOrder.buyerEmail, {
+            orderNumber: orderReference(cancelledOrder),
+            buyerName: cancelledOrder.buyerName,
+            placedAt: cancelledOrder.createdAt,
+            // `note` is string | null from asString; the template treats
+            // an absent reason as "no reason given" rather than printing
+            // the word null at a customer.
+            reason: note ?? undefined,
+          });
+        } catch (emailError) {
+          // The cancellation stands and the stock is already back. This
+          // needs to be findable in the logs, because the only other signal
+          // is a buyer who was never told.
+          console.error(
+            `[orders] ${orderReference(cancelledOrder)} cancelled but the notice to the buyer failed:`,
+            emailError,
+          );
+        }
+      });
     }
 
     const updated = await orders.findOne({ _id: order._id });

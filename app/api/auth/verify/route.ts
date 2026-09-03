@@ -90,7 +90,10 @@ export async function POST(req: NextRequest) {
     // be replayed even if the same request is sent twice.
     cookieStore.delete(OTP_CHALLENGE_COOKIE);
 
-    const { value, maxAgeSeconds } = signCustomerSession(result.email);
+    const { value, maxAgeSeconds } = signCustomerSession(
+      result.email,
+      result.profile,
+    );
     cookieStore.set(
       CUSTOMER_SESSION_COOKIE,
       value,

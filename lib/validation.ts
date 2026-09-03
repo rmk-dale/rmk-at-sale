@@ -449,3 +449,183 @@ export function escapeHtml(value: string): string {
 export function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+// ---------------------------------------------------------------------------
+// Outside-buyer fields
+// ---------------------------------------------------------------------------
+
+/**
+ * Control characters have no business in a name, a company or a phone
+ * number, and they matter because these values reach HTML email templates
+ * and the admin panel. The templates escape on output — this is the second
+ * layer, applied on the way in, so nothing odd reaches storage at all.
+ *
+ * Built with `new RegExp` rather than a literal so the source file contains
+ * no control characters of its own.
+ */
+const CONTROL_CHARS = new RegExp("[\\u0000-\\u001F\\u007F]", "g");
+
+function cleanFreeText(value: unknown, max: number): string | null {
+  // Generous cap on the raw value so an oversized body is rejected before
+  // any of the work below, then the real length rule after normalising —
+  // otherwise trailing whitespace decides whether a valid name is refused.
+  const raw = asString(value, max * 4);
+  if (!raw) return null;
+
+  const cleaned = raw.replace(CONTROL_CHARS, "").replace(/\s+/g, " ").trim();
+  if (cleaned.length < 2 || cleaned.length > max) return null;
+
+  // Must contain an actual letter. Stops "---", "12345" and "..." while
+  // staying out of the way of scripts other than Latin.
+  if (!/\p{L}/u.test(cleaned)) return null;
+
+  // An address or a URL in a name field is a bot filling in a payload, not
+  // a person. Angle brackets are refused for the same reason.
+  if (/[@<>]/.test(cleaned) || cleaned.includes("://")) return null;
+
+  return cleaned;
+}
+
+/**
+ * A person's name, as they wrote it.
+ *
+ * Deliberately permissive about which characters make up a name. It has to
+ * accept "Ma. Teresa Dela Cruz-Reyes Jr." and names carrying ñ, because a
+ * validator written around English first-and-last names rejects a large
+ * share of real Filipino ones — and a shopper who cannot get past the name
+ * field has no way to tell you about it.
+ */
+export function asPersonName(value: unknown): string | null {
+  return cleanFreeText(value, 80);
+}
+
+/**
+ * The company an outside buyer is ordering for.
+ *
+ * Same rules with more room, since "SM Retail, Inc." and "Ayala Land & Co."
+ * both have to pass. Deliberately NOT cross-checked against the buyer's
+ * email domain: someone at acmeholdings.com writing "Acme Retail Group" is
+ * ordinary, and a validator that tries to judge that relationship rejects
+ * real buyers. The admin panel shows the domain and the company side by
+ * side instead, and a person decides.
+ */
+export function asCompanyName(value: unknown): string | null {
+  return cleanFreeText(value, 100);
+}
+
+/**
+ * A Philippine phone number, normalised to E.164.
+ *
+ * Stored canonical so that two spellings of one number are one value, and
+ * displayed through `formatPhoneNumber` below — the person reading it in
+ * the admin panel is about to dial it, and "+639171234567" is not the shape
+ * anyone reads a number in.
+ *
+ * Accepts what people actually type: "0917 123 4567", "+63 917 123 4567",
+ * "(02) 8888 8888", "9171234567". Refuses anything it cannot turn into a
+ * number that could be dialled.
+ */
+export function asPhoneNumber(value: unknown): string | null {
+  const raw = asString(value, 40);
+  if (!raw) return null;
+
+  // Strip the punctuation people use to make numbers readable. Everything
+  // that survives must be digits, optionally behind a single leading "+".
+  const stripped = raw.replace(/[\s\-().]/g, "");
+  if (!/^\+?\d+$/.test(stripped)) return null;
+
+  const digits = stripped.replace(/^\+/, "");
+
+  let e164: string | null = null;
+
+  if (stripped.startsWith("+")) {
+    // An explicit country code is the buyer telling us where they are; take
+    // it as given rather than trying to be clever about it.
+    e164 = digits.length >= 10 && digits.length <= 15 ? `+${digits}` : null;
+  } else if (/^63\d{9,11}$/.test(digits)) {
+    // "639171234567" — the country code without the plus.
+    e164 = `+${digits}`;
+  } else if (/^0\d{9,10}$/.test(digits)) {
+    // "09171234567" mobile, or "0288888888" landline with area code.
+    e164 = `+63${digits.slice(1)}`;
+  } else if (/^9\d{9}$/.test(digits)) {
+    // "9171234567" — the leading zero dropped, which people do constantly.
+    e164 = `+63${digits}`;
+  }
+
+  if (!e164) return null;
+
+  // Final sanity check on the canonical form, so no branch above can emit
+  // something that is not a plausible dialable number.
+  return /^\+\d{10,15}$/.test(e164) ? e164 : null;
+}
+
+/**
+ * A stored E.164 number, written the way it is read aloud here.
+ *
+ * Falls back to the stored value for anything that is not a Philippine
+ * number: a wrong-but-plausible format is worse than the raw one, because
+ * it invites someone to dial what they see.
+ */
+export function formatPhoneNumber(e164: string | undefined): string {
+  if (!e164) return "";
+  if (!e164.startsWith("+63")) return e164;
+
+  const national = e164.slice(3);
+
+  // Mobile: shown the way it is dialled locally.
+  if (/^9\d{9}$/.test(national)) {
+    return `0${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`;
+  }
+
+  // Metro Manila landline: area code 2, then eight digits.
+  if (/^2\d{8}$/.test(national)) {
+    return `(02) ${national.slice(1, 5)} ${national.slice(5)}`;
+  }
+
+  return `0${national}`;
+}
+
+/** Domains where a dot in the local part is not significant. */
+const DOTLESS_LOCAL_DOMAINS = new Set(["gmail.com", "googlemail.com"]);
+
+/**
+ * The form of an address used for RATE-LIMIT KEYS AND THE DAILY ORDER CAP
+ * ONLY — never for storage, never for sending mail.
+ *
+ * Gmail treats "juan.dela.cruz@", "juandelacruz@" and "juan+anything@" as
+ * one mailbox; our counters treated them as three. That handed anyone an
+ * unlimited supply of fresh daily allowances for the price of typing "+2",
+ * which defeats the cap that is the only thing bounding how much stock one
+ * person can reserve without paying for it.
+ *
+ * Plus-tags are stripped for every domain, not only Gmail's: plenty of mail
+ * servers support them, and the failure mode of over-merging — two real
+ * addresses at one company sharing a limit — is a slightly stricter limit
+ * on what is almost always the same person. Dots are stripped only for the
+ * Gmail family, where they are genuinely insignificant; everywhere else a
+ * dot is part of the address.
+ *
+ * The buyer's address is stored and mailed exactly as they typed it, so a
+ * receipt always goes where they expect.
+ */
+export function canonicalEmail(email: string): string {
+  const lowered = email.trim().toLowerCase();
+  const atIndex = lowered.lastIndexOf("@");
+  if (atIndex <= 0) return lowered;
+
+  const domain = lowered.slice(atIndex + 1);
+  let local = lowered.slice(0, atIndex);
+
+  const plusIndex = local.indexOf("+");
+  if (plusIndex > 0) local = local.slice(0, plusIndex);
+
+  if (DOTLESS_LOCAL_DOMAINS.has(domain)) local = local.replace(/\./g, "");
+
+  // A local part that normalises away entirely — "+tag@example.com" — keeps
+  // its original form rather than collapsing every such address at a domain
+  // into one shared counter.
+  if (!local) return lowered;
+
+  return `${local}@${domain}`;
+}

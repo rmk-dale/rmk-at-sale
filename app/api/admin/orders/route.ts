@@ -28,6 +28,24 @@ export async function GET(req: NextRequest) {
   const filter: Filter<OrderDoc> = {};
   if (statusParam && isOrderStatus(statusParam)) filter.status = statusParam;
 
+  // Buyer class. Checked against the two known values for the same reason
+  // status is: a search param is always a string and cannot smuggle an
+  // operator, but an unrecognised one would still reach the query as a
+  // filter value and quietly return nothing.
+  //
+  // "internal" matches $ne rather than an equality, because orders placed
+  // before outside buyers existed carry no buyerType at all and are
+  // internal by construction — an equality filter would hide the entire
+  // order book from this view.
+  const buyerTypeParam = params.get("buyerType");
+  if (buyerTypeParam === "external") {
+    filter.buyerType = "external";
+  } else if (buyerTypeParam === "internal") {
+    filter.buyerType = { $ne: "external" };
+  } else if (buyerTypeParam) {
+    return NextResponse.json({ error: "Invalid buyer type." }, { status: 400 });
+  }
+
   // Lookup by tracking reference or buyer, for support requests.
   const search = params.get("search")?.trim();
   if (search) {

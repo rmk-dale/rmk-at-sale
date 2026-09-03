@@ -18,15 +18,19 @@ import {
 import {
   MIN_UNITS_PER_PRODUCT,
   bundleMinimumMessage,
+  canonicalEmail,
   evaluateBundles,
   validateCartItems,
 } from "@/lib/validation";
 import {
   DAILY_ORDER_COUNTED_STATUSES,
-  DAILY_ORDER_LIMIT,
   DAILY_ORDER_WINDOW_MS,
+  EXTERNAL_ORDERS_ENABLED,
+  classifyBuyer,
+  dailyOrderLimitFor,
   disallowedEmailMessage,
-  isAllowedOrderEmail,
+  refusedDomainMessage,
+  refusedDomainReason,
 } from "@/lib/orderPolicy";
 import type { ProductDoc } from "@/lib/models/product";
 import { invalidateProductCaches } from "@/lib/revalidate";
@@ -76,8 +80,11 @@ class InvalidVariantError extends Error {
 
 /** Raised inside the transaction when the address is over its daily cap. */
 class DailyOrderLimitError extends Error {
-  constructor(public placed: number) {
-    super(`Daily order limit reached (${placed})`);
+  constructor(
+    public placed: number,
+    public limit: number,
+  ) {
+    super(`Daily order limit reached (${placed} of ${limit})`);
   }
 }
 
@@ -117,26 +124,44 @@ export async function POST(req: NextRequest) {
 
     const { email } = session;
 
-    // 2. Re-check the domain allowlist against the session's own email.
+    // 2. Re-apply the admission policy against the session's own email.
     //
-    // The OTP endpoint already refuses outside addresses, so this looks
-    // redundant — it is not. Sessions last 24 hours and are signed, not
-    // stored, so any session minted before this policy existed (or before
-    // the allowlist was tightened) stays valid and would otherwise still
-    // be able to order. Checking at the point of effect, not only at the
-    // point of entry, is what makes the policy actually revocable.
-    if (!isAllowedOrderEmail(email)) {
+    // The OTP endpoint already does all of this, so it looks redundant — it
+    // is not. Sessions last 24 hours and are signed, not stored, so a
+    // session minted before a policy change stays valid and would otherwise
+    // keep ordering under the old rules for a further day. Checking at the
+    // point of effect, not only at the point of entry, is what makes
+    // EXTERNAL_ORDERS_ENABLED an actual switch rather than a door lock.
+    //
+    // The class is re-derived here rather than read off the session for the
+    // same reason: what matters is what the policy says now.
+    const refusal = refusedDomainReason(email);
+    if (refusal) {
+      return NextResponse.json(
+        { error: refusedDomainMessage(refusal) },
+        { status: 403 },
+      );
+    }
+
+    const buyerType = classifyBuyer(email);
+
+    if (buyerType === "external" && !EXTERNAL_ORDERS_ENABLED) {
       return NextResponse.json(
         { error: disallowedEmailMessage() },
         { status: 403 },
       );
     }
 
+    // One form per mailbox, for the cap below. The address the buyer typed
+    // is what gets stored and mailed.
+    const emailKey = canonicalEmail(email);
+    const dailyOrderLimit = dailyOrderLimitFor(buyerType);
+
     // 3. Rate limit per session. Cheap backstop against order spam from a
     // single authenticated mailbox; the concurrency gate below protects
     // the cluster, this protects the order book.
     const limit = await checkRateLimit(
-      `checkout:${hashIdentifier(email)}`,
+      `checkout:${hashIdentifier(emailKey)}`,
       RATE_LIMITS.checkoutPerSession,
     );
     if (!limit.ok) {
@@ -246,24 +271,30 @@ export async function POST(req: NextRequest) {
           // A bounded `find` is used rather than countDocuments because a
           // plain find is unambiguously safe inside a transaction, and
           // there is no reason to count past the limit.
+          //
+          // Matched on either key. `buyerEmailKey` is the canonical form and
+          // is what every order written from here on carries; the plain
+          // `buyerEmail` clause keeps orders placed before this shipped
+          // counting for the remainder of their 24-hour window, rather than
+          // silently granting one buyer a doubled allowance on deploy day.
           const since = new Date(Date.now() - DAILY_ORDER_WINDOW_MS);
           const recent = await orders
             .find(
               {
-                buyerEmail: email,
+                $or: [{ buyerEmailKey: emailKey }, { buyerEmail: email }],
                 createdAt: { $gte: since },
                 status: { $in: [...DAILY_ORDER_COUNTED_STATUSES] },
               },
               {
                 session: mongoSession,
                 projection: { _id: 1 },
-                limit: DAILY_ORDER_LIMIT,
+                limit: dailyOrderLimit,
               },
             )
             .toArray();
 
-          if (recent.length >= DAILY_ORDER_LIMIT) {
-            throw new DailyOrderLimitError(recent.length);
+          if (recent.length >= dailyOrderLimit) {
+            throw new DailyOrderLimitError(recent.length, dailyOrderLimit);
           }
 
           // Every product on the cart, in one query.
@@ -453,6 +484,25 @@ export async function POST(req: NextRequest) {
               _id: new ObjectId(),
               orderNumber,
               buyerEmail: email,
+              buyerEmailKey: emailKey,
+              buyerType,
+              // Only ever taken from the signed session, never from the
+              // request body — a client that posts a name and a company to
+              // this endpoint is ignored. And only for an outside buyer:
+              // someone who filled the fields in and then corrected their
+              // address to a company one must not have a declaration
+              // recorded against an order that never needed it.
+              ...(buyerType === "external"
+                ? {
+                    buyerName: session.buyerName,
+                    buyerCompany: session.buyerCompany,
+                    buyerPhone: session.buyerPhone,
+                    affiliationDeclaredAt: session.affiliationDeclaredAt
+                      ? new Date(session.affiliationDeclaredAt)
+                      : undefined,
+                    affiliationVersion: session.affiliationVersion,
+                  }
+                : {}),
               items: purchasedItems,
               // `OrderItem.price` stays the true unit price of the variant.
               // Folding the discount into it would put a price on the
@@ -509,7 +559,7 @@ export async function POST(req: NextRequest) {
         if (err instanceof DailyOrderLimitError) {
           return NextResponse.json(
             {
-              error: `You've placed ${DAILY_ORDER_LIMIT} orders in the last 24 hours, which is the limit. Please try again tomorrow, or contact the team if you need more.`,
+              error: `You've placed ${err.limit} order${err.limit === 1 ? "" : "s"} in the last 24 hours, which is the limit. Please try again tomorrow, or contact the team if you need more.`,
             },
             { status: 429 },
           );
@@ -610,6 +660,21 @@ export async function POST(req: NextRequest) {
             subtotal: receiptBreakdown.subtotal,
             bundleDiscount: receiptBreakdown.bundleDiscount,
             total: receiptTotal,
+            // Whoever reads this notification is the person who decides
+            // whether an outside order is legitimate, so the company and
+            // the declaration travel with it rather than sitting one click
+            // away in the admin panel.
+            buyerType,
+            ...(buyerType === "external"
+              ? {
+                  buyerName: session.buyerName,
+                  buyerCompany: session.buyerCompany,
+                  buyerPhone: session.buyerPhone,
+                  affiliationDeclaredAt: session.affiliationDeclaredAt
+                    ? new Date(session.affiliationDeclaredAt)
+                    : undefined,
+                }
+              : {}),
           },
           `${appUrl}/admin/orders`,
         );

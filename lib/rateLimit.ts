@@ -120,6 +120,37 @@ export const RATE_LIMITS = {
    */
   otpVerifyPerIp: { limit: 300, windowMs: 15 * 60_000 },
 
+  /**
+   * Checkout codes for buyers from outside the company, on their own keys.
+   *
+   * Separate keys rather than lower shared numbers, and that is the whole
+   * of the design. `otpRequestPerIp` above is loose at 100/15min because
+   * the entire office sits behind one corporate NAT — the same reasoning
+   * that shaped the vitals limits below — so tightening it to a figure that
+   * means anything against a stranger would lock out the fourth colleague
+   * to check out that afternoon. On a separate key, outside traffic cannot
+   * consume the office's budget and the office cannot consume theirs.
+   */
+  otpRequestPerIpExternal: { limit: 10, windowMs: 15 * 60_000 },
+
+  /**
+   * Ceiling on codes sent to outside addresses per hour, sitting below the
+   * site-wide `otpSendGlobal` ceiling rather than replacing it.
+   *
+   * Checked before the shared one, which is what makes it reserve capacity
+   * rather than merely report it: whatever the outside world is doing, at
+   * least seventy of the hundred hourly sends stay available to staff.
+   * Without it the two populations share one budget, and the smaller and
+   * more valuable of the two is the one that loses.
+   *
+   * Must stay below `otpSendGlobal` to mean anything at all — npm run
+   * check:buyer asserts that, because the failure is silent otherwise.
+   */
+  otpSendGlobalExternal: {
+    limit: Number(process.env.OTP_GLOBAL_HOURLY_LIMIT_EXTERNAL ?? 30),
+    windowMs: 60 * 60_000,
+  },
+
   /** Admin password attempts. Complements the per-account DB lockout. */
   adminLoginPerIp: { limit: 60, windowMs: 15 * 60_000 },
   adminLoginPerAccount: { limit: 8, windowMs: 15 * 60_000 },

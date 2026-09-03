@@ -591,6 +591,24 @@ export default function CartPage() {
                       </p>
                     )}
 
+                    {/* The line above reads as a restriction on its own, and
+                        someone at a partner company will take it to mean
+                        they cannot order at all. This is the half that
+                        invites them in, and it also warns that a couple of
+                        extra fields are coming, so the block opening below
+                        is not a surprise.
+
+                        Dropped once that block is actually open: it says the
+                        same thing, and repeating it there just makes the
+                        panel longer. */}
+                    {!isRefused && !isExternal && (
+                      <p className="mt-1.5 text-xs text-muted">
+                        Not on @rgoc.com.ph? That&apos;s fine — use your work
+                        email, as long as your company is connected to RGOC.
+                        We&apos;ll just ask who to contact.
+                      </p>
+                    )}
+
                     {/* Named a way forward rather than only saying no. This
                         is the message most likely to produce a support
                         question, so it is worth the extra clause. */}
